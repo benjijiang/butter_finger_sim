@@ -1,0 +1,72 @@
+# Butter Finger — joint configuration
+#
+# This file deliberately separates FIVE different concepts. Never mix them:
+#
+#   1. Simulation joint positions ....... radians (see config/poses.yaml)
+#   2. Recorded physical PWM data ....... microseconds (historical, below)
+#   3. Verified hardware limits ......... microseconds (mostly UNKNOWN -> null)
+#   4. Temporary simulation limits ...... radians (development-only, below)
+#   5. Named poses ...................... config/poses.yaml
+#
+# There is NO PWM-to-angle conversion anywhere in this repository yet,
+# because no measured angle calibration exists. Do not invent one.
+
+joint_order: [base, shoulder, elbow, wrist]
+
+# ---------------------------------------------------------------------------
+# PHYSICAL HARDWARE DATA (historical record — NOT used by the simulator)
+# Hardware: Raspberry Pi 5 -> UART -> Hiwonder RasAdapter5A V1.0 -> servo PWM
+# ---------------------------------------------------------------------------
+physical:
+  controller: "Hiwonder RasAdapter5A V1.0 (UART from Raspberry Pi 5)"
+
+  # Confirmed PWM port mapping. Ports 2 and 6 are unused.
+  pwm_ports:
+    base: 1
+    shoulder: 3
+    elbow: 4
+    wrist: 5
+  unused_ports: [2, 6]
+
+  # Recorded physical home signals in microseconds (historical calibration
+  # data from the original Butter_Finger control code).
+  home_pwm_us:
+    base: 1500
+    shoulder: 2200   # !!! see warnings.shoulder_home below !!!
+    elbow: 2490
+    wrist: 1400
+
+  # Tested pulse ranges in microseconds. Only the shoulder was ever tested.
+  # Unknown limits are null. DO NOT invent values.
+  tested_pwm_limits_us:
+    base:     {min: null, max: null}
+    shoulder: {min: 1200, max: 2220}
+    elbow:    {min: null, max: null}
+    wrist:    {min: null, max: null}
+
+  warnings:
+    shoulder_home: >
+      WARNING: the recorded shoulder home value (2200 us) is only 20 us below
+      the tested maximum (2220 us). It is preserved here strictly as
+      historical calibration data. It must be REVALIDATED on the physical arm
+      before the arm is ever operated again. Do not treat it as safe merely
+      because it was previously called "home".
+
+# ---------------------------------------------------------------------------
+# SIMULATION DATA (radians — used by PyBulletArm and the URDF generator)
+# ---------------------------------------------------------------------------
+simulation:
+  # Conservative development-only limits for joints whose true angular range
+  # is unknown. These are NOT physical calibration. Zero radians is a neutral
+  # mathematical reference pose, NOT a servo's electrical midpoint.
+  limits_rad:
+    base:     {lower: -1.5708, upper: 1.5708}
+    shoulder: {lower: -1.5708, upper: 1.5708}
+    elbow:    {lower: -1.5708, upper: 1.5708}
+    wrist:    {lower: -1.5708, upper: 1.5708}
+
+  # Position-control parameters (placeholders; not measured servo specs).
+  control:
+    max_force_nm: 5.0
+    max_velocity_rad_s: 3.0
+    control_rate_hz: 240      # simulation time step = 1 / control_rate_hz

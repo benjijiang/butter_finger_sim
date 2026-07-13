@@ -1,0 +1,24 @@
+# Butter Finger — named simulation poses
+#
+# All values are SIMULATION joint positions in RADIANS.
+#
+# IMPORTANT: these poses are NOT derived from the recorded physical home PWM
+# values in config/joints.yaml. No measured PWM-to-angle calibration exists,
+# so no conversion is performed. Zero radians is a neutral mathematical
+# reference pose for simulation development only.
+
+poses:
+  # Neutral simulated reference pose (arm pointing straight up).
+  sim_home:
+    base: 0.0
+    shoulder: 0.0
+    elbow: 0.0
+    wrist: 0.0
+
+  # Arbitrary demo pose used by examples/scripted_motion.py.
+  # Values are within the temporary simulation limits (+/- 1.5708 rad).
+  demo_reach:
+    base: 0.8
+    shoulder: 0.6
+    elbow: -0.9
+    wrist: 0.4

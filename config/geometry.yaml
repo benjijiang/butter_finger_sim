@@ -1,0 +1,35 @@
+# Butter Finger — temporary geometry
+#
+# ALL VALUES ARE PLACEHOLDERS. The real CAD model and physical measurements
+# are currently unavailable. These numbers exist only so the simulator has
+# a plausible four-joint arm to move. Replace them after measuring the real
+# arm, then regenerate the URDF:
+#
+#     python scripts/generate_urdf.py
+#
+# Units: meters (SI).
+
+# Primary dimensions (user-provided temporary values)
+base_height: 0.050
+upper_arm_length: 0.120
+forearm_length: 0.120
+wrist_length: 0.050
+link_width: 0.035
+
+# Derived/visual-only placeholders (pure guesses, never measured)
+base_radius: 0.045        # footprint of the base cylinder
+turret_height: 0.020      # small yaw platform between base_joint and shoulder_joint
+turret_radius: 0.020
+camera_size: 0.020        # camera modeled as a small cube at the wrist tip
+
+# Approximate masses in kilograms.
+# PLACEHOLDERS: rough guesses with valid positive values so PyBullet's
+# dynamics are stable. NOT suitable for payload, structural, or
+# servo-torque conclusions.
+masses_kg:
+  base: 0.300
+  turret: 0.050
+  upper_arm: 0.080
+  forearm: 0.080
+  wrist: 0.040
+  camera: 0.010
