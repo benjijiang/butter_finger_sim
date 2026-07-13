@@ -14,8 +14,11 @@
 joint_order: [base, shoulder, elbow, wrist]
 
 # ---------------------------------------------------------------------------
-# PHYSICAL HARDWARE DATA (historical record — NOT used by the simulator)
-# Hardware: Raspberry Pi 5 -> UART -> Hiwonder RasAdapter5A V1.0 -> servo PWM
+# PHYSICAL HARDWARE DATA — NOT used by the simulator; this is the source of
+# truth for the PWM hardware layer (src/butter_finger/backends/pwm_robot_arm.py)
+# that drives the real arm on the Raspberry Pi.
+# Hardware: Raspberry Pi 5 -> UART (/dev/ttyAMA0 @ 1000000) ->
+#           Hiwonder RasAdapter5A V1.0 -> servo PWM
 # ---------------------------------------------------------------------------
 physical:
   controller: "Hiwonder RasAdapter5A V1.0 (UART from Raspberry Pi 5)"
@@ -49,6 +52,16 @@ physical:
       The recorded shoulder home value (2200 us) sits only 20 us below the
       tested maximum (2220 us). It was revalidated on the real machine on
       2026-07-13 and confirmed safe as the home position.
+    recovered_code: >
+      The original Pi control code (board_demo/butter_finger.py, class
+      RobotArm) was recovered on 2026-07-14 and ported here as PWMRobotArm.
+      It carried slightly narrower historical limits (510-2490 us,
+      shoulder max 2215 us); the tested values above are authoritative and
+      supersede them.
+    motion_timing: >
+      Real-machine timing validated by the original tests: single joint
+      duration 2.0 s + 2.5 s settle; coordinated home move 3.0 s + 3.5 s;
+      base sweep 1.0 s + 1.5 s.
 
 # ---------------------------------------------------------------------------
 # SIMULATION DATA (radians — used by PyBulletArm and the URDF generator)

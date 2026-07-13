@@ -34,6 +34,31 @@ class JointLimits:
 
 
 @dataclass(frozen=True)
+class PulseLimits:
+    """Tested hardware PWM pulse limits in microseconds."""
+
+    min_us: int
+    max_us: int
+
+    def contains(self, pulse_us: float) -> bool:
+        return self.min_us <= pulse_us <= self.max_us
+
+
+@dataclass(frozen=True)
+class PhysicalConfig:
+    """The 'physical' section of config/joints.yaml: recorded hardware data.
+
+    Used only by the PWM hardware layer on the Raspberry Pi; the simulator
+    never reads these values.
+    """
+
+    joint_order: tuple[str, ...]
+    pwm_ports: dict[str, int]
+    home_pwm_us: dict[str, int]
+    pulse_limits_us: dict[str, PulseLimits]
+
+
+@dataclass(frozen=True)
 class ArmConfig:
     joint_order: tuple[str, ...]
     sim_limits: dict[str, JointLimits]
@@ -98,4 +123,49 @@ def load_arm_config(config_dir: Path = CONFIG_DIR) -> ArmConfig:
         max_force_nm=float(control["max_force_nm"]),
         max_velocity_rad_s=float(control["max_velocity_rad_s"]),
         control_rate_hz=float(control["control_rate_hz"]),
+    )
+
+
+def load_physical_config(config_dir: Path = CONFIG_DIR) -> PhysicalConfig:
+    """Load the recorded physical hardware data (PWM microseconds).
+
+    This is the tested calibration record used by the PWM hardware layer
+    (backends/pwm_robot_arm.py) on the Raspberry Pi. It is validated so a
+    home pose outside the tested pulse limits fails at load time.
+    """
+    joints_cfg = _load_yaml(config_dir / "joints.yaml")
+    physical = joints_cfg["physical"]
+
+    joint_order = tuple(joints_cfg["joint_order"])
+    if set(joint_order) != set(JOINT_NAMES):
+        raise ValueError(
+            f"joint_order in joints.yaml {joint_order} does not match the "
+            f"expected joints {JOINT_NAMES}"
+        )
+
+    pwm_ports = {name: int(physical["pwm_ports"][name]) for name in joint_order}
+    home_pwm_us = {name: int(physical["home_pwm_us"][name]) for name in joint_order}
+    pulse_limits_us = {
+        name: PulseLimits(
+            int(physical["tested_pwm_limits_us"][name]["min"]),
+            int(physical["tested_pwm_limits_us"][name]["max"]),
+        )
+        for name in joint_order
+    }
+
+    for name in joint_order:
+        limits = pulse_limits_us[name]
+        if limits.min_us >= limits.max_us:
+            raise ValueError(f"{name}: invalid pulse limits {limits}")
+        if not limits.contains(home_pwm_us[name]):
+            raise ValueError(
+                f"{name}: home pulse {home_pwm_us[name]} us is outside the "
+                f"tested range [{limits.min_us}, {limits.max_us}] us"
+            )
+
+    return PhysicalConfig(
+        joint_order=joint_order,
+        pwm_ports=pwm_ports,
+        home_pwm_us=home_pwm_us,
+        pulse_limits_us=pulse_limits_us,
     )

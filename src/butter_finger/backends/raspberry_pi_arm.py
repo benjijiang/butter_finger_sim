@@ -1,10 +1,15 @@
-"""Stub for the future physical-arm backend on the Raspberry Pi 5.
+"""Stub for the future RADIANS physical-arm backend on the Raspberry Pi 5.
 
 NOT IMPLEMENTED. This file exists only to reserve the architectural seam.
-It imports no hardware library (no serial/UART, no GPIO) and must never
-gain a real servo command until every safety precondition below is met.
+It imports no hardware library and must never gain a real servo command
+until every safety precondition below is met.
 
-Future data path (for reference only):
+Real hardware is currently driven at the PWM level instead: see
+backends/pwm_robot_arm.py (PWMRobotArm, microseconds), the verified port of
+the original board_demo control code. This stub is the future radians
+adapter that will sit on top of that PWM layer.
+
+Data path (for reference only):
 
     Raspberry Pi 5 --UART--> Hiwonder RasAdapter5A V1.0 --PWM--> servos
 
@@ -27,10 +32,10 @@ from collections.abc import Mapping
 from butter_finger.arm import ArmBackend
 
 _NOT_IMPLEMENTED_MSG = (
-    "RaspberryPiArm is not implemented yet. The physical backend requires "
-    "the Raspberry Pi 5 with the Hiwonder RasAdapter5A and a measured, "
-    "verified PWM-to-angle calibration, none of which are available. "
-    "Use PyBulletArm for simulation instead."
+    "RaspberryPiArm (radians) is not implemented yet: no measured "
+    "PWM-to-angle calibration exists. Use PyBulletArm for simulation, or "
+    "PWMRobotArm (PWM microseconds) to drive the real arm on the "
+    "Raspberry Pi."
 )
 
 

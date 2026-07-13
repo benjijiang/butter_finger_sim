@@ -12,8 +12,10 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIRS = ("src", "scripts", "examples", "tests")
 
-# Hardware libraries that must never be imported in this repository: the
-# physical backend is a stub, and no servo command may ever run from here.
+# Hardware libraries that must never be imported directly in this repository.
+# Real-hardware access goes only through the external Hiwonder SDK
+# (ros_robot_controller_sdk, which lives outside the repo in board_demo/),
+# loaded lazily by PWMRobotArm at instantiation.
 FORBIDDEN_IMPORT = re.compile(
     r"^\s*(?:import|from)\s+(RPi|serial|gpiozero|smbus2?|spidev|lgpio|pigpio)\b",
     re.MULTILINE,

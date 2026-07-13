@@ -53,33 +53,37 @@ butter-finger-sim/
 │   └── generate_urdf.py     # regenerates the URDF from the config files
 ├── src/butter_finger/
 │   ├── arm.py               # ArmBackend abstract interface (radians only)
-│   ├── config.py            # YAML config loader
+│   ├── config.py            # YAML config loader (sim + physical sections)
 │   └── backends/
 │       ├── pybullet_arm.py      # simulation backend (runs on the Mac)
-│       └── raspberry_pi_arm.py  # hardware stub — intentionally NotImplemented
+│       ├── pwm_robot_arm.py     # REAL hardware, PWM microseconds (Raspberry Pi)
+│       └── raspberry_pi_arm.py  # radians hardware stub — awaits calibration
 ├── examples/
 │   ├── view_robot.py        # display the arm in the PyBullet GUI
 │   ├── joint_sliders.py     # one GUI slider per joint
 │   ├── go_home.py           # move to the simulated reference pose
-│   └── scripted_motion.py   # smoothstep motion sequence
-├── tests/                   # dependency-light; none require PyBullet
+│   ├── scripted_motion.py   # smoothstep motion sequence
+│   ├── pi_test_pose.py      # REAL HARDWARE: joint-by-joint home-pose test
+│   └── pi_sweep_base.py     # REAL HARDWARE: base sweep around home
+├── tests/                   # dependency-light; none require PyBullet or hardware
 ├── MAC_SETUP.md             # exact Mac Terminal setup and run commands
 └── CLAUDE.md                # persistent context for future Claude Code sessions
 ```
 
 ## Shared backend architecture
 
-Application code commands the arm **only in radians** through the
-`ArmBackend` interface. Backends translate radians into whatever their
-target needs; high-level code never sends PWM directly.
+Simulation-facing application code commands the arm **only in radians**
+through the `ArmBackend` interface. Backends translate radians into whatever
+their target needs; high-level code never sends PWM directly.
 
 ```text
-Application command in radians
-            |
-       ArmBackend API
-        /          \
-PyBulletArm     RaspberryPiArm
-joint target    future calibrated PWM
+Application command in radians          Pi-only scripts (PWM microseconds)
+            |                                        |
+       ArmBackend API                           PWMRobotArm
+        /          \                                 |
+PyBulletArm     RaspberryPiArm            ros_robot_controller_sdk (board_demo)
+joint target    future calibrated PWM                |
+                                          UART -> RasAdapter5A -> servos
 ```
 
 ```python
@@ -92,10 +96,42 @@ with PyBulletArm(gui=True) as arm:
     print(arm.get_joint_positions())
 ```
 
-`RaspberryPiArm` is a stub that raises `NotImplementedError`. It will only be
-implemented after measured PWM-to-angle calibration and verified safe limits
-exist for every joint — commands without verified limits will be rejected,
-never clamped to guesses.
+`RaspberryPiArm` (radians) is a stub that raises `NotImplementedError`. It
+will only be implemented after measured PWM-to-angle calibration and verified
+safe limits exist for every joint — commands without verified limits will be
+rejected, never clamped to guesses.
+
+## Real hardware: the PWM layer (Raspberry Pi only)
+
+Until the PWM-to-angle calibration exists, the real arm is driven directly
+in PWM pulse widths (microseconds) through `PWMRobotArm`, the verified port
+of the original `board_demo/butter_finger.py` control code. Ports, tested
+pulse limits, and the recorded home pose come from the `physical` section of
+`config/joints.yaml`; out-of-range pulses raise `JointLimitError` and are
+never clamped.
+
+```python
+from butter_finger import PWMRobotArm
+
+arm = PWMRobotArm()                      # opens the serial Board via the SDK
+arm.move_joint("base", 1500, duration=1.0)   # PWM microseconds
+arm.move_joints({"shoulder": 2200, "wrist": 1400}, duration=2.0)
+arm.home()                               # recorded physical home pose
+```
+
+The Hiwonder SDK (`ros_robot_controller_sdk.py`, serial `/dev/ttyAMA0` at
+1,000,000 baud) is **not vendored** in this repository. `PWMRobotArm`
+imports it lazily at instantiation, looking in `sys.path`, then
+`$BUTTER_FINGER_SDK_PATH`, then the directory containing this repository
+checkout — on the Pi the repo lives inside `board_demo/`, right next to the
+SDK file, so it is found automatically. On the Mac (simulation only) the SDK
+is absent and everything else still works.
+
+Note an API difference to reconcile later: the real board interpolates each
+move over an explicit `duration` (seconds) passed with every command, while
+the radians `ArmBackend` has no duration parameter and the simulator instead
+caps joint velocity. The two interfaces will be unified once calibration
+exists.
 
 ## Getting started
 
@@ -114,8 +150,12 @@ python examples/joint_sliders.py
 The real arm uses inexpensive hobby servos driven open-loop by PWM pulse
 width. The simulation cannot faithfully reproduce them because:
 
-- **No feedback exists on the real arm.** The servos report nothing back;
-  the simulator's `get_joint_positions()` has no physical counterpart yet.
+- **No verified feedback exists on the real arm.** The SDK does expose
+  `pwm_servo_read_position()` / `pwm_servo_read_offset()`, but the servos
+  themselves are open-loop, so the board most likely reports the last
+  commanded value rather than the true shaft angle (unverified). Until this
+  is tested, treat the simulator's `get_joint_positions()` as having no
+  trustworthy physical counterpart.
 - **PWM-to-angle mapping is unknown and nonlinear-ish.** Until it is measured
   per joint, simulated radians and real pulse widths are unrelated scales.
 - **Torque, speed, deadband, and backlash are guesses.** The simulator uses
@@ -129,10 +169,13 @@ real dynamic behavior.
 
 ## Roadmap
 
-1. Recover the CAD model and original Pi source code.
+1. ~~Recover the original Pi source code~~ — recovered: it lives on the Pi
+   as `board_demo/butter_finger.py` (class `RobotArm`) and is now ported
+   into this repository as `PWMRobotArm`. The CAD model is still missing.
 2. Measure real link dimensions; update `config/geometry.yaml` and
    regenerate the URDF.
 3. Replace primitive visuals with CAD meshes (same joint names, same API).
 4. Measure PWM-to-angle calibration per joint on the physical arm.
-5. Implement `RaspberryPiArm` on the Pi with verified limits only.
+5. Implement `RaspberryPiArm` (radians) on top of the PWM layer with
+   verified calibration only.
 6. Add camera rendering from `camera_link`.
