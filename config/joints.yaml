@@ -4,7 +4,7 @@
 #
 #   1. Simulation joint positions ....... radians (see config/poses.yaml)
 #   2. Recorded physical PWM data ....... microseconds (historical, below)
-#   3. Verified hardware limits ......... microseconds (mostly UNKNOWN -> null)
+#   3. Verified hardware limits ......... microseconds (tested, below)
 #   4. Temporary simulation limits ...... radians (development-only, below)
 #   5. Named poses ...................... config/poses.yaml
 #
@@ -32,25 +32,23 @@ physical:
   # data from the original Butter_Finger control code).
   home_pwm_us:
     base: 1500
-    shoulder: 2200   # !!! see warnings.shoulder_home below !!!
+    shoulder: 2200   # revalidated on the real machine 2026-07-13, see notes
     elbow: 2490
     wrist: 1400
 
-  # Tested pulse ranges in microseconds. Only the shoulder was ever tested.
-  # Unknown limits are null. DO NOT invent values.
+  # Verified pulse ranges in microseconds, tested on the real machine.
+  # base/elbow/wrist confirmed 2026-07-13; shoulder tested earlier.
   tested_pwm_limits_us:
-    base:     {min: null, max: null}
+    base:     {min: 505, max: 2495}
     shoulder: {min: 1200, max: 2220}
-    elbow:    {min: null, max: null}
-    wrist:    {min: null, max: null}
+    elbow:    {min: 505, max: 2495}
+    wrist:    {min: 505, max: 2495}
 
-  warnings:
+  notes:
     shoulder_home: >
-      WARNING: the recorded shoulder home value (2200 us) is only 20 us below
-      the tested maximum (2220 us). It is preserved here strictly as
-      historical calibration data. It must be REVALIDATED on the physical arm
-      before the arm is ever operated again. Do not treat it as safe merely
-      because it was previously called "home".
+      The recorded shoulder home value (2200 us) sits only 20 us below the
+      tested maximum (2220 us). It was revalidated on the real machine on
+      2026-07-13 and confirmed safe as the home position.
 
 # ---------------------------------------------------------------------------
 # SIMULATION DATA (radians — used by PyBulletArm and the URDF generator)

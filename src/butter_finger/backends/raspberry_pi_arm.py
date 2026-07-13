@@ -12,10 +12,10 @@ Future data path (for reference only):
 
 Safety preconditions before implementing:
   1. Measured PWM-to-angle calibration for every joint (none exists yet).
-  2. Verified safe PWM limits for every joint. Only the shoulder has a
-     tested range (1200-2220 us), and its recorded home value (2200 us)
-     sits 20 us below that tested maximum — it must be revalidated first.
-  3. Commands without verified safe limits must be rejected, never clamped
+  2. Verified safe PWM limits for every joint. Tested on the real machine:
+     base/elbow/wrist 505-2495 us, shoulder 1200-2220 us. The shoulder home
+     value (2200 us) was revalidated on 2026-07-13.
+  3. Commands without verified calibration must be rejected, never clamped
      to guesses.
 
 Never command real hardware using the placeholder simulation limits.

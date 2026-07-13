@@ -35,18 +35,15 @@ without the physical arm nearby. This is a functional approximate model,
   source code is currently unavailable, as is the CAD model.
 - PWM port mapping: base=1, shoulder=3, elbow=4, wrist=5; ports 2 and 6 unused.
 - Recorded home PWM (µs): base 1500, shoulder 2200, elbow 2490, wrist 1400.
-- Tested shoulder pulse range: 1200–2220 µs. **Only the shoulder was tested.**
-
-⚠️ **Shoulder warning:** the recorded shoulder home (2200 µs) is 20 µs below
-the tested maximum (2220 µs). It is historical calibration data only and
-must be revalidated before the physical arm is operated again. Never label
-it safe merely because it was previously called "home".
+- Verified pulse ranges (µs): base/elbow/wrist 505–2495 (confirmed by the
+  user 2026-07-13); shoulder 1200–2220.
+- The shoulder home (2200 µs, 20 µs below its tested maximum) was
+  revalidated on the real machine on 2026-07-13 and confirmed safe.
 
 ## Known unknowns (do not invent values for these)
 
 - CAD model and exact link geometry.
 - Real joint angular ranges and servo rotation directions.
-- PWM limits for base, elbow, wrist (kept `null` in config/joints.yaml).
 - PWM-to-angle calibration (none exists — no conversion code anywhere yet).
 - Real masses, inertias, servo torque/speed.
 - Exact camera transform.

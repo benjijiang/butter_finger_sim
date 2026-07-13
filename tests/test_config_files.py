@@ -46,23 +46,29 @@ def test_recorded_home_pwm(joints_cfg: dict) -> None:
     }
 
 
-def test_tested_shoulder_pwm_range(joints_cfg: dict) -> None:
+def test_verified_pwm_limits(joints_cfg: dict) -> None:
     limits = joints_cfg["physical"]["tested_pwm_limits_us"]
     assert limits["shoulder"] == {"min": 1200, "max": 2220}
-
-
-def test_unknown_pwm_limits_stay_null(joints_cfg: dict) -> None:
-    limits = joints_cfg["physical"]["tested_pwm_limits_us"]
     for joint in ("base", "elbow", "wrist"):
-        assert limits[joint] == {"min": None, "max": None}, (
-            f"{joint} PWM limits are unknown and must remain null"
+        assert limits[joint] == {"min": 505, "max": 2495}, (
+            f"{joint} PWM limits were verified as 505-2495 us on 2026-07-13"
         )
 
 
-def test_shoulder_home_warning_present(joints_cfg: dict) -> None:
-    warning = joints_cfg["physical"]["warnings"]["shoulder_home"]
-    assert "2200" in warning
-    assert "2220" in warning
+def test_home_pwm_within_tested_limits(joints_cfg: dict) -> None:
+    home = joints_cfg["physical"]["home_pwm_us"]
+    limits = joints_cfg["physical"]["tested_pwm_limits_us"]
+    for joint, pulse in home.items():
+        assert limits[joint]["min"] <= pulse <= limits[joint]["max"], (
+            f"{joint} home pulse {pulse} us is outside its tested range"
+        )
+
+
+def test_shoulder_home_note_present(joints_cfg: dict) -> None:
+    note = joints_cfg["physical"]["notes"]["shoulder_home"]
+    assert "2200" in note
+    assert "2220" in note
+    assert "revalidated" in note.lower()
 
 
 def test_simulation_limits(joints_cfg: dict) -> None:

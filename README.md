@@ -35,13 +35,9 @@ names or the control API**, so no application code will need to change.
 |---|---|
 | PWM port mapping: base=1, shoulder=3, elbow=4, wrist=5 (2, 6 unused) | All link dimensions, masses, inertias |
 | Recorded home PWM: base 1500, shoulder 2200, elbow 2490, wrist 1400 µs | Joint angular ranges (±1.5708 rad is a development limit) |
-| Tested shoulder pulse range: 1200–2220 µs | Wrist joint axis (Y is an unverified assumption) |
-| Pi → UART → RasAdapter5A → servo PWM signal chain | Camera transform, servo force/velocity, PWM-to-angle calibration (none exists) |
-
-⚠️ The recorded shoulder home value (2200 µs) is only 20 µs below the tested
-maximum (2220 µs). It is preserved as historical data in
-[config/joints.yaml](config/joints.yaml) and **must be revalidated before the
-physical arm is operated again**.
+| Tested pulse ranges: base/elbow/wrist 505–2495 µs, shoulder 1200–2220 µs | Wrist joint axis (Y is an unverified assumption) |
+| Shoulder home (2200 µs) revalidated on the real machine (2026-07-13) | Camera transform, servo force/velocity |
+| Pi → UART → RasAdapter5A → servo PWM signal chain | PWM-to-angle calibration (none exists yet) |
 
 ## Repository layout
 
