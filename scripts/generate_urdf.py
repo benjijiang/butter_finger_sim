@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate models/butter_finger_simple.urdf from the config files.
 
-Run this on the Mac (or any machine with PyYAML installed) after editing
+Run this on the sim machine (or any machine with PyYAML installed) after editing
 config/geometry.yaml or the simulation limits in config/joints.yaml:
 
     python scripts/generate_urdf.py

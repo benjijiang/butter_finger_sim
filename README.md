@@ -33,6 +33,7 @@ names or the control API**, so no application code will need to change.
 
 | Physically verified (recorded from the real arm) | Placeholder / assumed |
 |---|---|
+| Servo models: base/elbow/wrist = SG90, shoulder = LD-1501MG | Servo datasheet PWM/angle specs (deliberately not recorded) |
 | PWM port mapping: base=1, shoulder=3, elbow=4, wrist=5 (2, 6 unused) | All link dimensions, masses, inertias |
 | Recorded home PWM: base 1500, shoulder 2200, elbow 2490, wrist 1400 µs | Joint angular ranges (±1.5708 rad is a development limit) |
 | Tested pulse ranges: base/elbow/wrist 505–2495 µs, shoulder 1200–2220 µs | Wrist joint axis (Y is an unverified assumption) |
@@ -55,7 +56,7 @@ butter-finger-sim/
 │   ├── arm.py               # ArmBackend abstract interface (radians only)
 │   ├── config.py            # YAML config loader (sim + physical sections)
 │   └── backends/
-│       ├── pybullet_arm.py      # simulation backend (runs on the Mac)
+│       ├── pybullet_arm.py      # simulation backend (runs on the sim machine)
 │       ├── pwm_robot_arm.py     # REAL hardware, PWM microseconds (Raspberry Pi)
 │       └── raspberry_pi_arm.py  # radians hardware stub — awaits calibration
 ├── examples/
@@ -66,7 +67,7 @@ butter-finger-sim/
 │   ├── pi_test_pose.py      # REAL HARDWARE: joint-by-joint home-pose test
 │   └── pi_sweep_base.py     # REAL HARDWARE: base sweep around home
 ├── tests/                   # dependency-light; none require PyBullet or hardware
-├── MAC_SETUP.md             # exact Mac Terminal setup and run commands
+├── SIM_SETUP.md             # simulation machine setup (Linux primary, Mac fallback)
 └── CLAUDE.md                # persistent context for future Claude Code sessions
 ```
 
@@ -124,8 +125,8 @@ The Hiwonder SDK (`ros_robot_controller_sdk.py`, serial `/dev/ttyAMA0` at
 imports it lazily at instantiation, looking in `sys.path`, then
 `$BUTTER_FINGER_SDK_PATH`, then the directory containing this repository
 checkout — on the Pi the repo lives inside `board_demo/`, right next to the
-SDK file, so it is found automatically. On the Mac (simulation only) the SDK
-is absent and everything else still works.
+SDK file, so it is found automatically. On the simulation machine
+(Linux/Mac) the SDK is absent and everything else still works.
 
 Note an API difference to reconcile later: the real board interpolates each
 move over an explicit `duration` (seconds) passed with every command, while
@@ -135,7 +136,8 @@ exists.
 
 ## Getting started
 
-See [MAC_SETUP.md](MAC_SETUP.md). Short version, on the Mac:
+See [SIM_SETUP.md](SIM_SETUP.md). Short version, on the simulation machine
+(the Linux GPU machine; the Mac also works as a fallback):
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate

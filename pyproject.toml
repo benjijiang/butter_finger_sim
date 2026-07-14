@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# PyBullet is only installed on the simulation machine (the Mac).
+# PyBullet is only installed on the simulation machine (Linux primary, Mac fallback).
 sim = ["pybullet>=3.2.5,<4"]
 dev = ["pytest>=7.4"]
 

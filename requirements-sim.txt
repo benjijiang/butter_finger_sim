@@ -1,4 +1,5 @@
-# Mac simulation dependencies. Install inside the Mac's own .venv only:
+# Simulation dependencies (Linux sim machine primary, Mac fallback).
+# Install inside the sim machine's own .venv only:
 #     python -m pip install -r requirements-sim.txt
 # Do NOT install these on the Windows authoring machine.
 pybullet>=3.2.5,<4

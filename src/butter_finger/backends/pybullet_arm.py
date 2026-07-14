@@ -1,8 +1,8 @@
 """PyBullet implementation of the ArmBackend interface.
 
-Runtime environment: the Mac (PyBullet is intentionally not installed on
-the Windows authoring machine). PyBullet is imported lazily so that the
-rest of the package works without it.
+Runtime environment: the simulation machine — Linux primary, Mac fallback
+(PyBullet is intentionally not installed on the Windows authoring machine).
+PyBullet is imported lazily so that the rest of the package works without it.
 """
 from __future__ import annotations
 
@@ -25,11 +25,12 @@ from butter_finger.config import (
 
 _MISSING_PYBULLET_MSG = (
     "PyBullet is not installed in this Python environment. This simulator is "
-    "meant to run on the Mac inside its own virtual environment:\n"
+    "meant to run on the simulation machine (Linux primary, Mac fallback) "
+    "inside its own virtual environment:\n"
     "    python3 -m venv .venv\n"
     "    source .venv/bin/activate\n"
     "    python -m pip install -r requirements-sim.txt\n"
-    "See MAC_SETUP.md for the full instructions."
+    "See SIM_SETUP.md for the full instructions."
 )
 
 _MISSING_URDF_MSG = (

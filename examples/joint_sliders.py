@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Interactive four-joint control with PyBullet GUI sliders.
 
-Run on the Mac, inside the project's .venv, from a normal local Terminal
-(not an SSH session):
+Run on the simulation machine (Linux/Mac), inside the project's .venv,
+from a local terminal on the machine's own display (not an SSH session):
 
     python examples/joint_sliders.py
 

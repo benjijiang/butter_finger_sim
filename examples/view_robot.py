@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Open the PyBullet GUI and display the Butter Finger arm at sim_home.
 
-Run on the Mac, inside the project's .venv, from a normal local Terminal
-(not an SSH session):
+Run on the simulation machine (Linux/Mac), inside the project's .venv,
+from a local terminal on the machine's own display (not an SSH session):
 
     python examples/view_robot.py
 

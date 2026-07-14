@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Move the simulated arm to the configured sim_home pose and hold it.
 
-Run on the Mac, inside the project's .venv:
+Run on the simulation machine (Linux/Mac), inside the project's .venv:
 
     python examples/go_home.py
 """

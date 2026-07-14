@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Scripted smooth-motion demo using smoothstep interpolation.
 
-Run on the Mac, inside the project's .venv:
+Run on the simulation machine (Linux/Mac), inside the project's .venv:
 
     python examples/scripted_motion.py
 
