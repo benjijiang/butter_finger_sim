@@ -1,28 +1,7 @@
-# Virtual environments — every machine (Windows/Mac/Pi) creates its own;
-# never commit one and never copy one between machines.
-.venv/
-venv/
-
-# Python caches and build output
-__pycache__/
-*.pyc
-*.pyo
-.pytest_cache/
-*.egg-info/
-build/
-dist/
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Editors (remove .vscode/ from here if shared settings are ever added)
-.idea/
-.vscode/
-
-# Secrets and local configuration — never commit credentials
 .env
 .env.*
-*.pem
-*.key
-credentials*.json
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.DS_Store
