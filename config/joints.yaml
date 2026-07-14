@@ -23,6 +23,15 @@ joint_order: [base, shoulder, elbow, wrist]
 physical:
   controller: "Hiwonder RasAdapter5A V1.0 (UART from Raspberry Pi 5)"
 
+  # Servo model per joint (confirmed by the user 2026-07-14). Model names
+  # only — datasheet pulse/angle specs are deliberately NOT recorded here;
+  # PWM-to-angle calibration must be measured on the real arm, never assumed.
+  servo_models:
+    base: "SG90"
+    shoulder: "LD-1501MG"   # larger, higher-torque metal-gear servo
+    elbow: "SG90"
+    wrist: "SG90"
+
   # Confirmed PWM port mapping. Ports 2 and 6 are unused.
   pwm_ports:
     base: 1
