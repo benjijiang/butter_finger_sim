@@ -2,14 +2,15 @@
 """Generate models/butter_finger_simple.urdf from the config files.
 
 Run this on the sim machine (or any machine with PyYAML installed) after editing
-config/geometry.yaml or the simulation limits in config/joints.yaml:
+config/geometry.yaml or the simulation settings in config/joints.yaml:
 
     python scripts/generate_urdf.py
 
-All geometry, masses, and inertias are PLACEHOLDERS until the real CAD
-model and physical measurements are recovered. When CAD meshes become
-available, only the <visual>/<collision> geometry should change; joint
-names and the control API must stay the same.
+Primary joint-to-joint dimensions come from a user-provided reference drawing.
+Primitive shapes, cross-sections, masses, and inertias remain placeholders until
+the real CAD model is recovered. When CAD meshes become available, only the
+<visual>/<collision> geometry should change; joint names and the control API
+must stay the same.
 """
 from __future__ import annotations
 
@@ -26,6 +27,20 @@ OUTPUT_PATH = REPO_ROOT / "models" / "butter_finger_simple.urdf"
 def fmt(value: float) -> str:
     """Format a number for URDF output, stable across regenerations."""
     return f"{value:.8g}"
+
+
+def axis_offset_rpy(axis: str, offset_rad: float) -> str:
+    """Express a zero-configuration offset as URDF roll/pitch/yaw."""
+    rpy_by_axis = {
+        "1 0 0": (offset_rad, 0.0, 0.0),
+        "0 1 0": (0.0, offset_rad, 0.0),
+        "0 0 1": (0.0, 0.0, offset_rad),
+    }
+    try:
+        rpy = rpy_by_axis[axis]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported joint axis for zero offset: {axis!r}") from exc
+    return " ".join(fmt(value) for value in rpy)
 
 
 def box_inertia(mass: float, x: float, y: float, z: float) -> tuple[float, float, float]:
@@ -126,6 +141,7 @@ def revolute_joint(
     parent: str,
     child: str,
     origin_z: float,
+    zero_offset_rad: float,
     axis: str,
     lower: float,
     upper: float,
@@ -133,12 +149,13 @@ def revolute_joint(
     velocity: float,
     comment: str,
 ) -> str:
+    origin_rpy = axis_offset_rpy(axis, zero_offset_rad)
     return f"""
   <!-- {comment} -->
   <joint name="{name}" type="revolute">
     <parent link="{parent}"/>
     <child link="{child}"/>
-    <origin xyz="0 0 {fmt(origin_z)}" rpy="0 0 0"/>
+    <origin xyz="0 0 {fmt(origin_z)}" rpy="{origin_rpy}"/>
     <axis xyz="{axis}"/>
     <limit lower="{fmt(lower)}" upper="{fmt(upper)}" effort="{fmt(effort)}" velocity="{fmt(velocity)}"/>
   </joint>
@@ -161,12 +178,16 @@ def main() -> None:
     joints_cfg = yaml.safe_load(JOINTS_PATH.read_text(encoding="utf-8"))
 
     masses = geo["masses_kg"]
+    zero_offsets = joints_cfg["simulation"]["zero_offset_rad"]
     limits = joints_cfg["simulation"]["limits_rad"]
     control = joints_cfg["simulation"]["control"]
     effort = control["max_force_nm"]
     velocity = control["max_velocity_rad_s"]
 
     width = geo["link_width"]
+    turret_height = geo["shoulder_joint_height"] - geo["base_height"]
+    if turret_height <= 0:
+        raise ValueError("shoulder_joint_height must be greater than base_height")
 
     def lim(joint: str) -> tuple[float, float]:
         return limits[joint]["lower"], limits[joint]["upper"]
@@ -180,11 +201,13 @@ def main() -> None:
   GENERATED FILE. Do not edit by hand.
   Regenerate with: python scripts/generate_urdf.py
   Dimension source: config/geometry.yaml
-  Limit source:     config/joints.yaml (simulation.limits_rad)
+  Joint source:     config/joints.yaml (simulation limits and zero offsets)
 
-  PLACEHOLDER ASSUMPTIONS:
-  - All dimensions, masses, and inertias are temporary approximations and
-    are NOT suitable for payload, structural, or servo-torque conclusions.
+  MODEL ASSUMPTIONS:
+  - Primary link lengths come from a user-provided dimensioned drawing dated
+    2026-07-15; they have not been independently verified against CAD.
+  - Primitive shapes, cross-sections, masses, and inertias remain placeholders
+    and are NOT suitable for payload, structural, or servo-torque conclusions.
   - The wrist joint axis (Y) is an UNVERIFIED assumption; verify against
     the physical arm.
   - Joint limits of +/- 1.5708 rad are simulation-development limits, not
@@ -213,6 +236,7 @@ def main() -> None:
             "base_link",
             "turret_link",
             geo["base_height"],
+            zero_offsets["base"],
             "0 0 1",
             *lim("base"),
             effort,
@@ -224,7 +248,7 @@ def main() -> None:
         cylinder_link(
             "turret_link",
             geo["turret_radius"],
-            geo["turret_height"],
+            turret_height,
             masses["turret"],
             "turret_grey",
             "0.45 0.45 0.45 1",
@@ -236,7 +260,8 @@ def main() -> None:
             "shoulder_joint",
             "turret_link",
             "upper_arm_link",
-            geo["turret_height"],
+            turret_height,
+            zero_offsets["shoulder"],
             "0 1 0",
             *lim("shoulder"),
             effort,
@@ -261,6 +286,7 @@ def main() -> None:
             "upper_arm_link",
             "forearm_link",
             geo["upper_arm_length"],
+            zero_offsets["elbow"],
             "0 1 0",
             *lim("elbow"),
             effort,
@@ -285,6 +311,7 @@ def main() -> None:
             "forearm_link",
             "wrist_link",
             geo["forearm_length"],
+            zero_offsets["wrist"],
             "0 1 0",
             *lim("wrist"),
             effort,

@@ -1,12 +1,13 @@
 # Butter Finger — joint configuration
 #
-# This file deliberately separates FIVE different concepts. Never mix them:
+# This project deliberately separates SIX different concepts. Never mix them:
 #
 #   1. Simulation joint positions ....... radians (see config/poses.yaml)
 #   2. Recorded physical PWM data ....... microseconds (historical, below)
 #   3. Verified hardware limits ......... microseconds (tested, below)
 #   4. Temporary simulation limits ...... radians (development-only, below)
 #   5. Named poses ...................... config/poses.yaml
+#   6. Named action sequences ........... config/actions.yaml (sim-only)
 #
 # There is NO PWM-to-angle conversion anywhere in this repository yet,
 # because no measured angle calibration exists. Do not invent one.
@@ -76,9 +77,18 @@ physical:
 # SIMULATION DATA (radians — used by PyBulletArm and the URDF generator)
 # ---------------------------------------------------------------------------
 simulation:
+  # Approximate orientation of each child link when its reported joint angle
+  # is 0 rad. Positive values follow the joint axis right-hand rule. These
+  # simulation-only offsets are not PWM-to-angle calibration.
+  zero_offset_rad:
+    base: 0.0
+    shoulder: 0.0
+    elbow: 0.85
+    wrist: 0.25
+
   # Conservative development-only limits for joints whose true angular range
   # is unknown. These are NOT physical calibration. Zero radians is a neutral
-  # mathematical reference pose, NOT a servo's electrical midpoint.
+  # mathematical joint coordinate, NOT a servo's electrical midpoint.
   limits_rad:
     base:     {lower: -1.5708, upper: 1.5708}
     shoulder: {lower: -1.5708, upper: 1.5708}

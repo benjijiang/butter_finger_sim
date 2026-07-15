@@ -45,10 +45,21 @@ class RaspberryPiArm(ArmBackend):
     def __init__(self) -> None:
         raise NotImplementedError(_NOT_IMPLEMENTED_MSG)
 
-    def move_joint(self, joint: str, position_rad: float) -> None:
+    def move_joint(
+        self,
+        joint: str,
+        position_rad: float,
+        *,
+        duration_s: float | None = None,
+    ) -> None:
         raise NotImplementedError(_NOT_IMPLEMENTED_MSG)
 
-    def move_joints(self, targets_rad: Mapping[str, float]) -> None:
+    def move_joints(
+        self,
+        targets_rad: Mapping[str, float],
+        *,
+        duration_s: float | None = None,
+    ) -> None:
         raise NotImplementedError(_NOT_IMPLEMENTED_MSG)
 
     def get_joint_positions(self) -> dict[str, float]:

@@ -57,26 +57,35 @@ without the physical arm nearby. This is a functional approximate model,
 
 ## Known unknowns (do not invent values for these)
 
-- CAD model and exact link geometry.
+- CAD model, exact link shapes, cross-sections, and mounting geometry.
 - Real joint angular ranges and servo rotation directions.
 - PWM-to-angle calibration (none exists — no conversion code anywhere yet).
 - Real masses, inertias, servo torque/speed.
 - Exact camera transform.
 - Wrist joint axis (Y in the URDF is a temporary assumption).
 
-## Current temporary geometry (meters, placeholders)
+## Current reference geometry (meters)
 
-base_height 0.050 · upper_arm_length 0.120 · forearm_length 0.120 ·
-wrist_length 0.050 · link_width 0.035. Source of truth is
-`config/geometry.yaml`; `scripts/generate_urdf.py` regenerates
-`models/butter_finger_simple.urdf` from it. Simulation joint limits are
-±1.5708 rad (development-only). Zero radians is a neutral mathematical
-reference pose, not a servo electrical midpoint.
+A user-provided dimensioned drawing received 2026-07-15 gives:
+base_height 0.03253 · absolute shoulder_joint_height 0.07390 ·
+upper_arm_length (shoulder–elbow) 0.1452 · forearm_length (elbow–wrist)
+0.100 · wrist_length (wrist–camera/end tip) 0.049. The generator derives
+the base-to-shoulder turret height as 0.04137. These drawing dimensions have
+not been independently verified against CAD or the physical arm. Link width,
+radii, primitive shapes, masses, and inertias remain placeholders.
+
+Source of truth is `config/geometry.yaml`; `scripts/generate_urdf.py`
+regenerates `models/butter_finger_simple.urdf` from it. Simulation joint
+limits remain ±1.5708 rad (development-only). Zero radians is a mathematical
+joint coordinate, not a servo electrical midpoint; simulation-only zero-pose
+orientation offsets are elbow +0.85 rad and wrist +0.25 rad.
 
 ## Architectural rules
 
 1. Simulation-facing application code uses **radians only**, through the
-   `ArmBackend` interface in `src/butter_finger/arm.py`.
+   `ArmBackend` interface in `src/butter_finger/arm.py`. Joint commands accept
+   optional `duration_s`: omitted means a non-blocking target update; provided
+   means a blocking timed move using backend-specific interpolation.
 2. Real-hardware control happens at the PWM layer:
    `backends/pwm_robot_arm.py` (`PWMRobotArm`, microseconds, Pi only). It
    reads ports/limits/home from the `physical` section of
@@ -86,15 +95,17 @@ reference pose, not a servo electrical midpoint.
 3. `RaspberryPiArm` (radians) stays a `NotImplementedError` stub until
    measured PWM-to-angle calibration exists for every joint; it will then be
    built on top of the PWM layer.
-4. Keep the five config concepts separate (see `config/joints.yaml` header):
-   sim radians, recorded PWM, verified hardware limits, temporary sim
-   limits, named poses.
+4. Keep the six config concepts separate (see `config/joints.yaml` header):
+   sim radians, recorded PWM, verified hardware limits, temporary sim limits,
+   named poses, and named action sequences. `config/actions.yaml` is
+   simulation-only until calibration and explicit real-machine approval.
 5. URDF joint names are fixed: `base_joint`, `shoulder_joint`,
    `elbow_joint`, `wrist_joint`, plus fixed `camera_link`. Never rename.
-6. Known API mismatch to reconcile after calibration: the real board takes
-   an explicit `duration` per command and interpolates on the controller;
-   `ArmBackend` has no duration parameter and the simulator caps velocity
-   instead.
+6. Timed motion is unified at the radians API boundary: `PyBulletArm`
+   performs 240 Hz smoothstep interpolation, while the future calibrated
+   `RaspberryPiArm` will forward the same duration to `PWMRobotArm`, whose
+   controller performs interpolation. `RaspberryPiArm` remains unavailable
+   until calibration exists.
 
 ## Safety rules
 
@@ -122,9 +133,13 @@ the control API must not change, so application code is unaffected.
 - [x] Recover original Pi code (`board_demo/butter_finger.py`); port it as
       the PWM hardware layer `PWMRobotArm` with Pi examples and tests
       (2026-07-14). CAD model still missing.
-- [ ] First run on the Linux sim machine: `pytest` green, sliders working
+- [x] First run on the Linux sim machine: `pytest` green, sliders working
       (see SIM_SETUP.md).
-- [ ] Recover CAD; measure real geometry; update configs.
+- [x] Add validated config-driven simulation actions and optional timed
+      `ArmBackend` moves (`home`, `demo_reach`, `base_scan`,
+      `reach_and_return`, `wrist_up`, `wrist_down`).
+- [ ] Recover CAD; verify the reference-drawing dimensions and remaining
+      geometry; update configs as needed.
 - [ ] Replace primitives with CAD meshes.
 - [ ] Measure PWM-to-angle calibration per joint; record verified limits.
 - [ ] Implement `RaspberryPiArm` (radians) on top of the PWM layer.

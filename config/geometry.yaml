@@ -1,24 +1,24 @@
 # Butter Finger — temporary geometry
 #
-# ALL VALUES ARE PLACEHOLDERS. The real CAD model and physical measurements
-# are currently unavailable. These numbers exist only so the simulator has
-# a plausible four-joint arm to move. Replace them after measuring the real
-# arm, then regenerate the URDF:
+# Primary dimensions below come from the user-provided dimensioned reference
+# drawing dated 2026-07-15. They have not been independently checked against
+# CAD or the physical arm. Cross-sections, radii, masses, and inertias remain
+# placeholders. Regenerate the URDF after editing:
 #
 #     python scripts/generate_urdf.py
 #
 # Units: meters (SI).
 
-# Primary dimensions (user-provided temporary values)
-base_height: 0.050
-upper_arm_length: 0.120
-forearm_length: 0.120
-wrist_length: 0.050
-link_width: 0.035
+# User-provided dimensions from the reference drawing.
+base_height: 0.03253             # base bottom to base_joint
+shoulder_joint_height: 0.07390   # absolute height above the base bottom
+upper_arm_length: 0.1452         # shoulder_joint to elbow_joint
+forearm_length: 0.100            # elbow_joint to wrist_joint
+wrist_length: 0.049              # wrist_joint to camera/end tip
 
 # Derived/visual-only placeholders (pure guesses, never measured)
+link_width: 0.035
 base_radius: 0.045        # footprint of the base cylinder
-turret_height: 0.020      # small yaw platform between base_joint and shoulder_joint
 turret_radius: 0.020
 camera_size: 0.020        # camera modeled as a small cube at the wrist tip
 

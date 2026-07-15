@@ -14,6 +14,7 @@ backends load their dependencies lazily when instantiated.
 """
 from __future__ import annotations
 
+from butter_finger.actions import ActionRunner, UnknownActionError
 from butter_finger.arm import (
     ArmBackend,
     BackendUnavailableError,
@@ -25,14 +26,22 @@ from butter_finger.backends.pybullet_arm import PyBulletArm
 from butter_finger.backends.raspberry_pi_arm import RaspberryPiArm
 from butter_finger.config import (
     JOINT_NAMES,
+    ActionConfig,
+    ActionStep,
+    ArmAction,
     ArmConfig,
     PhysicalConfig,
+    load_action_config,
     load_arm_config,
     load_physical_config,
 )
 
 __all__ = [
+    "ActionConfig",
+    "ActionRunner",
+    "ActionStep",
     "ArmBackend",
+    "ArmAction",
     "ArmConfig",
     "BackendUnavailableError",
     "JOINT_NAMES",
@@ -41,7 +50,9 @@ __all__ = [
     "PhysicalConfig",
     "PyBulletArm",
     "RaspberryPiArm",
+    "UnknownActionError",
     "UnknownJointError",
+    "load_action_config",
     "load_arm_config",
     "load_physical_config",
 ]

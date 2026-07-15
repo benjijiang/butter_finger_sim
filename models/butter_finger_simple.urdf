@@ -5,11 +5,13 @@
   GENERATED FILE. Do not edit by hand.
   Regenerate with: python scripts/generate_urdf.py
   Dimension source: config/geometry.yaml
-  Limit source:     config/joints.yaml (simulation.limits_rad)
+  Joint source:     config/joints.yaml (simulation limits and zero offsets)
 
-  PLACEHOLDER ASSUMPTIONS:
-  - All dimensions, masses, and inertias are temporary approximations and
-    are NOT suitable for payload, structural, or servo-torque conclusions.
+  MODEL ASSUMPTIONS:
+  - Primary link lengths come from a user-provided dimensioned drawing dated
+    2026-07-15; they have not been independently verified against CAD.
+  - Primitive shapes, cross-sections, masses, and inertias remain placeholders
+    and are NOT suitable for payload, structural, or servo-torque conclusions.
   - The wrist joint axis (Y) is an UNVERIFIED assumption; verify against
     the physical arm.
   - Joint limits of +/- 1.5708 rad are simulation-development limits, not
@@ -22,24 +24,24 @@
   <!-- base_link: fixed base cylinder (placeholder dimensions) -->
   <link name="base_link">
     <visual>
-      <origin xyz="0 0 0.025" rpy="0 0 0"/>
+      <origin xyz="0 0 0.016265" rpy="0 0 0"/>
       <geometry>
-        <cylinder radius="0.045" length="0.05"/>
+        <cylinder radius="0.045" length="0.03253"/>
       </geometry>
       <material name="base_grey">
         <color rgba="0.25 0.25 0.25 1"/>
       </material>
     </visual>
     <collision>
-      <origin xyz="0 0 0.025" rpy="0 0 0"/>
+      <origin xyz="0 0 0.016265" rpy="0 0 0"/>
       <geometry>
-        <cylinder radius="0.045" length="0.05"/>
+        <cylinder radius="0.045" length="0.03253"/>
       </geometry>
     </collision>
     <inertial>
-      <origin xyz="0 0 0.025" rpy="0 0 0"/>
+      <origin xyz="0 0 0.016265" rpy="0 0 0"/>
       <mass value="0.3"/>
-      <inertia ixx="0.000214375" ixy="0" ixz="0" iyy="0.000214375" iyz="0" izz="0.00030375"/>
+      <inertia ixx="0.00017833002" ixy="0" ixz="0" iyy="0.00017833002" iyz="0" izz="0.00030375"/>
     </inertial>
   </link>
 
@@ -47,7 +49,7 @@
   <joint name="base_joint" type="revolute">
     <parent link="base_link"/>
     <child link="turret_link"/>
-    <origin xyz="0 0 0.05" rpy="0 0 0"/>
+    <origin xyz="0 0 0.03253" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
     <limit lower="-1.5708" upper="1.5708" effort="5" velocity="3"/>
   </joint>
@@ -55,24 +57,24 @@
   <!-- turret_link: small yaw platform between base and shoulder (placeholder) -->
   <link name="turret_link">
     <visual>
-      <origin xyz="0 0 0.01" rpy="0 0 0"/>
+      <origin xyz="0 0 0.020685" rpy="0 0 0"/>
       <geometry>
-        <cylinder radius="0.02" length="0.02"/>
+        <cylinder radius="0.02" length="0.04137"/>
       </geometry>
       <material name="turret_grey">
         <color rgba="0.45 0.45 0.45 1"/>
       </material>
     </visual>
     <collision>
-      <origin xyz="0 0 0.01" rpy="0 0 0"/>
+      <origin xyz="0 0 0.020685" rpy="0 0 0"/>
       <geometry>
-        <cylinder radius="0.02" length="0.02"/>
+        <cylinder radius="0.02" length="0.04137"/>
       </geometry>
     </collision>
     <inertial>
-      <origin xyz="0 0 0.01" rpy="0 0 0"/>
+      <origin xyz="0 0 0.020685" rpy="0 0 0"/>
       <mass value="0.05"/>
-      <inertia ixx="6.6666667e-06" ixy="0" ixz="0" iyy="6.6666667e-06" iyz="0" izz="1e-05"/>
+      <inertia ixx="1.2131154e-05" ixy="0" ixz="0" iyy="1.2131154e-05" iyz="0" izz="1e-05"/>
     </inertial>
   </link>
 
@@ -80,7 +82,7 @@
   <joint name="shoulder_joint" type="revolute">
     <parent link="turret_link"/>
     <child link="upper_arm_link"/>
-    <origin xyz="0 0 0.02" rpy="0 0 0"/>
+    <origin xyz="0 0 0.04137" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
     <limit lower="-1.5708" upper="1.5708" effort="5" velocity="3"/>
   </joint>
@@ -88,24 +90,24 @@
   <!-- upper_arm_link: extends +Z from the shoulder joint -->
   <link name="upper_arm_link">
     <visual>
-      <origin xyz="0 0 0.06" rpy="0 0 0"/>
+      <origin xyz="0 0 0.0726" rpy="0 0 0"/>
       <geometry>
-        <box size="0.035 0.035 0.12"/>
+        <box size="0.035 0.035 0.1452"/>
       </geometry>
       <material name="arm_yellow">
         <color rgba="0.95 0.8 0.2 1"/>
       </material>
     </visual>
     <collision>
-      <origin xyz="0 0 0.06" rpy="0 0 0"/>
+      <origin xyz="0 0 0.0726" rpy="0 0 0"/>
       <geometry>
-        <box size="0.035 0.035 0.12"/>
+        <box size="0.035 0.035 0.1452"/>
       </geometry>
     </collision>
     <inertial>
-      <origin xyz="0 0 0.06" rpy="0 0 0"/>
+      <origin xyz="0 0 0.0726" rpy="0 0 0"/>
       <mass value="0.08"/>
-      <inertia ixx="0.00010416667" ixy="0" ixz="0" iyy="0.00010416667" iyz="0" izz="1.6333333e-05"/>
+      <inertia ixx="0.00014872027" ixy="0" ixz="0" iyy="0.00014872027" iyz="0" izz="1.6333333e-05"/>
     </inertial>
   </link>
 
@@ -113,7 +115,7 @@
   <joint name="elbow_joint" type="revolute">
     <parent link="upper_arm_link"/>
     <child link="forearm_link"/>
-    <origin xyz="0 0 0.12" rpy="0 0 0"/>
+    <origin xyz="0 0 0.1452" rpy="0 0.85 0"/>
     <axis xyz="0 1 0"/>
     <limit lower="-1.5708" upper="1.5708" effort="5" velocity="3"/>
   </joint>
@@ -121,24 +123,24 @@
   <!-- forearm_link: extends +Z from the elbow joint -->
   <link name="forearm_link">
     <visual>
-      <origin xyz="0 0 0.06" rpy="0 0 0"/>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
       <geometry>
-        <box size="0.035 0.035 0.12"/>
+        <box size="0.035 0.035 0.1"/>
       </geometry>
       <material name="forearm_orange">
         <color rgba="0.9 0.6 0.15 1"/>
       </material>
     </visual>
     <collision>
-      <origin xyz="0 0 0.06" rpy="0 0 0"/>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
       <geometry>
-        <box size="0.035 0.035 0.12"/>
+        <box size="0.035 0.035 0.1"/>
       </geometry>
     </collision>
     <inertial>
-      <origin xyz="0 0 0.06" rpy="0 0 0"/>
+      <origin xyz="0 0 0.05" rpy="0 0 0"/>
       <mass value="0.08"/>
-      <inertia ixx="0.00010416667" ixy="0" ixz="0" iyy="0.00010416667" iyz="0" izz="1.6333333e-05"/>
+      <inertia ixx="7.4833333e-05" ixy="0" ixz="0" iyy="7.4833333e-05" iyz="0" izz="1.6333333e-05"/>
     </inertial>
   </link>
 
@@ -146,7 +148,7 @@
   <joint name="wrist_joint" type="revolute">
     <parent link="forearm_link"/>
     <child link="wrist_link"/>
-    <origin xyz="0 0 0.12" rpy="0 0 0"/>
+    <origin xyz="0 0 0.1" rpy="0 0.25 0"/>
     <axis xyz="0 1 0"/>
     <limit lower="-1.5708" upper="1.5708" effort="5" velocity="3"/>
   </joint>
@@ -154,24 +156,24 @@
   <!-- wrist_link: extends +Z from the wrist joint -->
   <link name="wrist_link">
     <visual>
-      <origin xyz="0 0 0.025" rpy="0 0 0"/>
+      <origin xyz="0 0 0.0245" rpy="0 0 0"/>
       <geometry>
-        <box size="0.035 0.035 0.05"/>
+        <box size="0.035 0.035 0.049"/>
       </geometry>
       <material name="wrist_grey">
         <color rgba="0.45 0.45 0.45 1"/>
       </material>
     </visual>
     <collision>
-      <origin xyz="0 0 0.025" rpy="0 0 0"/>
+      <origin xyz="0 0 0.0245" rpy="0 0 0"/>
       <geometry>
-        <box size="0.035 0.035 0.05"/>
+        <box size="0.035 0.035 0.049"/>
       </geometry>
     </collision>
     <inertial>
-      <origin xyz="0 0 0.025" rpy="0 0 0"/>
+      <origin xyz="0 0 0.0245" rpy="0 0 0"/>
       <mass value="0.04"/>
-      <inertia ixx="1.2416667e-05" ixy="0" ixz="0" iyy="1.2416667e-05" iyz="0" izz="8.1666667e-06"/>
+      <inertia ixx="1.2086667e-05" ixy="0" ixz="0" iyy="1.2086667e-05" iyz="0" izz="8.1666667e-06"/>
     </inertial>
   </link>
 
@@ -179,7 +181,7 @@
   <joint name="camera_joint" type="fixed">
     <parent link="wrist_link"/>
     <child link="camera_link"/>
-    <origin xyz="0 0 0.05" rpy="0 0 0"/>
+    <origin xyz="0 0 0.049" rpy="0 0 0"/>
   </joint>
 
   <!-- camera_link: camera modeled as a small cube (rendering not implemented yet) -->

@@ -78,6 +78,8 @@ All tests are dependency-light (no PyBullet needed) and should pass.
 python examples/view_robot.py
 python examples/joint_sliders.py
 python examples/scripted_motion.py
+python examples/run_action.py --list
+python examples/run_action.py base_scan
 ```
 
 - `view_robot.py` — displays the arm; close the PyBullet window to exit.
@@ -85,8 +87,18 @@ python examples/scripted_motion.py
   in radians, using the temporary simulation limits.
 - `scripted_motion.py` — smoothstep motion sequence: home → base → shoulder
   and elbow → wrist → home.
+- `run_action.py --list` — lists the validated, config-driven simulation
+  actions without opening PyBullet.
+- `run_action.py <name>` — runs one action from `config/actions.yaml` in the
+  GUI; available names include `home`, `demo_reach`, `base_scan`,
+  `reach_and_return`, `wrist_up`, and `wrist_down`.
 - There is also `python examples/go_home.py`, which moves the arm to the
   simulated reference pose.
+
+The named actions use temporary radians and are not approved for the physical
+PWM-controlled arm. A timed simulator move uses smoothstep interpolation at
+the configured 240 Hz control rate; slider updates omit the duration and
+remain non-blocking.
 
 ## 6. Deactivate / reactivate the environment
 

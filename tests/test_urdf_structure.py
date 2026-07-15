@@ -10,9 +10,12 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 URDF_PATH = REPO_ROOT / "models" / "butter_finger_simple.urdf"
+JOINTS_PATH = REPO_ROOT / "config" / "joints.yaml"
+GEOMETRY_PATH = REPO_ROOT / "config" / "geometry.yaml"
 
 EXPECTED_REVOLUTE_JOINTS = ["base_joint", "shoulder_joint", "elbow_joint", "wrist_joint"]
 
@@ -23,6 +26,17 @@ def robot() -> ET.Element:
         f"{URDF_PATH} missing; run 'python scripts/generate_urdf.py'"
     )
     return ET.parse(URDF_PATH).getroot()
+
+
+@pytest.fixture(scope="module")
+def zero_offsets() -> dict[str, float]:
+    config = yaml.safe_load(JOINTS_PATH.read_text(encoding="utf-8"))
+    return config["simulation"]["zero_offset_rad"]
+
+
+@pytest.fixture(scope="module")
+def geometry() -> dict[str, float]:
+    return yaml.safe_load(GEOMETRY_PATH.read_text(encoding="utf-8"))
 
 
 def test_root_is_robot(robot: ET.Element) -> None:
@@ -106,3 +120,33 @@ def test_joint_axes(robot: ET.Element) -> None:
         name = joint.get("name")
         if name in expected_axes:
             assert joint.find("axis").get("xyz") == expected_axes[name]
+
+
+def test_joint_zero_offsets_match_config(
+    robot: ET.Element, zero_offsets: dict[str, float]
+) -> None:
+    for joint in robot.findall("joint"):
+        name = joint.get("name")
+        if name not in EXPECTED_REVOLUTE_JOINTS:
+            continue
+        config_name = name.removesuffix("_joint")
+        offset = zero_offsets[config_name]
+        expected_rpy = (0.0, 0.0, offset) if config_name == "base" else (0.0, offset, 0.0)
+        actual_rpy = tuple(float(value) for value in joint.find("origin").get("rpy").split())
+        assert actual_rpy == pytest.approx(expected_rpy)
+
+
+def test_joint_distances_match_geometry(
+    robot: ET.Element, geometry: dict[str, float]
+) -> None:
+    expected_z = {
+        "base_joint": geometry["base_height"],
+        "shoulder_joint": geometry["shoulder_joint_height"] - geometry["base_height"],
+        "elbow_joint": geometry["upper_arm_length"],
+        "wrist_joint": geometry["forearm_length"],
+        "camera_joint": geometry["wrist_length"],
+    }
+    for joint_name, expected in expected_z.items():
+        origin = robot.find(f"./joint[@name='{joint_name}']/origin")
+        assert origin is not None
+        assert float(origin.get("xyz").split()[2]) == pytest.approx(expected)

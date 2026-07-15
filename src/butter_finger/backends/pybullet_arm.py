@@ -6,8 +6,10 @@ PyBullet is imported lazily so that the rest of the package works without it.
 """
 from __future__ import annotations
 
+import math
 import time
 from collections.abc import Mapping
+from collections.abc import Iterator
 from pathlib import Path
 
 from butter_finger.arm import (
@@ -45,6 +47,23 @@ def _import_pybullet():
     except ImportError as exc:
         raise BackendUnavailableError(_MISSING_PYBULLET_MSG) from exc
     return pybullet
+
+
+def _smoothstep_trajectory(
+    start: Mapping[str, float],
+    target: Mapping[str, float],
+    duration_s: float,
+    control_rate_hz: float,
+) -> Iterator[dict[str, float]]:
+    """Yield fixed-rate smoothstep targets, ending exactly at ``target``."""
+    steps = max(1, round(duration_s * control_rate_hz))
+    for step in range(1, steps + 1):
+        alpha = step / steps
+        smooth_alpha = 3 * alpha**2 - 2 * alpha**3
+        yield {
+            joint: start[joint] + smooth_alpha * (position - start[joint])
+            for joint, position in target.items()
+        }
 
 
 class PyBulletArm(ArmBackend):
@@ -181,9 +200,8 @@ class PyBulletArm(ArmBackend):
     # ArmBackend interface
     # ------------------------------------------------------------------
 
-    def move_joint(self, joint: str, position_rad: float) -> None:
-        """Set the position-control target for one joint (radians)."""
-        self._validate(joint, position_rad)
+    def _set_joint_target(self, joint: str, position_rad: float) -> None:
+        """Send one already-validated target without advancing simulation."""
         self._pb.setJointMotorControl2(
             bodyUniqueId=self._robot_id,
             jointIndex=self._joint_indices[joint],
@@ -194,16 +212,65 @@ class PyBulletArm(ArmBackend):
             physicsClientId=self._client,
         )
 
-    def move_joints(self, targets_rad: Mapping[str, float]) -> None:
-        """Set position-control targets for multiple joints (radians).
+    @staticmethod
+    def _validate_duration(duration_s: float | None) -> None:
+        if duration_s is None:
+            return
+        if (
+            isinstance(duration_s, bool)
+            or not isinstance(duration_s, (int, float))
+            or not math.isfinite(duration_s)
+            or duration_s <= 0
+        ):
+            raise ValueError("duration_s must be a finite number greater than zero")
+
+    def move_joint(
+        self,
+        joint: str,
+        position_rad: float,
+        *,
+        duration_s: float | None = None,
+    ) -> None:
+        """Command one joint, optionally completing a timed smoothstep move."""
+        self.move_joints({joint: position_rad}, duration_s=duration_s)
+
+    def move_joints(
+        self,
+        targets_rad: Mapping[str, float],
+        *,
+        duration_s: float | None = None,
+    ) -> None:
+        """Command multiple joints, optionally as a timed smoothstep move.
 
         All targets are validated before any joint is commanded, so an
-        invalid request leaves the arm untouched.
+        invalid request leaves the arm untouched. Without ``duration_s`` this
+        retains the original non-blocking set-target behavior. With a
+        duration it blocks while advancing deterministic fixed simulation
+        steps; GUI clients are paced to wall-clock time.
         """
         for joint, position in targets_rad.items():
             self._validate(joint, position)
-        for joint, position in targets_rad.items():
-            self.move_joint(joint, position)
+        self._validate_duration(duration_s)
+
+        if duration_s is None:
+            for joint, position in targets_rad.items():
+                self._set_joint_target(joint, position)
+            return
+
+        if not targets_rad:
+            return
+
+        positions = self.get_joint_positions()
+        start = {joint: positions[joint] for joint in targets_rad}
+        for intermediate in _smoothstep_trajectory(
+            start,
+            targets_rad,
+            duration_s,
+            self._config.control_rate_hz,
+        ):
+            for joint, position in intermediate.items():
+                self._set_joint_target(joint, position)
+            self.step(realtime=self._is_gui())
 
     def get_joint_positions(self) -> dict[str, float]:
         return {

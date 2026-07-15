@@ -32,13 +32,29 @@ class ArmBackend(ABC):
     """Abstract four-joint arm. All positions are radians."""
 
     @abstractmethod
-    def move_joint(self, joint: str, position_rad: float) -> None:
-        """Command one joint in radians."""
+    def move_joint(
+        self,
+        joint: str,
+        position_rad: float,
+        *,
+        duration_s: float | None = None,
+    ) -> None:
+        """Command one joint in radians, optionally as a timed blocking move.
+
+        When ``duration_s`` is omitted, implementations retain their
+        non-blocking set-target behavior. A positive duration completes the
+        move synchronously using backend-appropriate interpolation.
+        """
         raise NotImplementedError
 
     @abstractmethod
-    def move_joints(self, targets_rad: Mapping[str, float]) -> None:
-        """Command multiple joints in radians."""
+    def move_joints(
+        self,
+        targets_rad: Mapping[str, float],
+        *,
+        duration_s: float | None = None,
+    ) -> None:
+        """Command multiple joints, optionally as a timed blocking move."""
         raise NotImplementedError
 
     @abstractmethod

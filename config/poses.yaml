@@ -8,7 +8,8 @@
 # reference pose for simulation development only.
 
 poses:
-  # Neutral simulated reference pose (arm pointing straight up).
+  # Neutral simulated reference pose. Link orientations at 0 rad include the
+  # simulation-only zero offsets configured in config/joints.yaml.
   sim_home:
     base: 0.0
     shoulder: 0.0

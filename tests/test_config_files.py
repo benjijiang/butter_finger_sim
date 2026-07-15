@@ -1,6 +1,7 @@
 """Validate the YAML configuration files and the config loader."""
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import pytest
@@ -79,6 +80,17 @@ def test_simulation_limits(joints_cfg: dict) -> None:
         assert entry["upper"] == pytest.approx(1.5708)
 
 
+def test_simulation_zero_offsets(joints_cfg: dict) -> None:
+    offsets = joints_cfg["simulation"]["zero_offset_rad"]
+    assert offsets == {
+        "base": 0.0,
+        "shoulder": 0.0,
+        "elbow": 0.85,
+        "wrist": 0.25,
+    }
+    assert all(math.isfinite(float(offset)) for offset in offsets.values())
+
+
 def test_sim_home_pose_is_neutral(poses_cfg: dict) -> None:
     home = poses_cfg["poses"]["sim_home"]
     assert set(home) == set(JOINT_NAMES)
@@ -89,6 +101,7 @@ def test_sim_home_pose_is_neutral(poses_cfg: dict) -> None:
 def test_geometry_values_are_positive(geometry_cfg: dict) -> None:
     for key in (
         "base_height",
+        "shoulder_joint_height",
         "upper_arm_length",
         "forearm_length",
         "wrist_length",
@@ -97,6 +110,15 @@ def test_geometry_values_are_positive(geometry_cfg: dict) -> None:
         assert geometry_cfg[key] > 0
     for name, mass in geometry_cfg["masses_kg"].items():
         assert mass > 0, f"mass of {name} must be positive"
+
+
+def test_reference_drawing_dimensions(geometry_cfg: dict) -> None:
+    assert geometry_cfg["base_height"] == pytest.approx(0.03253)
+    assert geometry_cfg["shoulder_joint_height"] == pytest.approx(0.07390)
+    assert geometry_cfg["upper_arm_length"] == pytest.approx(0.1452)
+    assert geometry_cfg["forearm_length"] == pytest.approx(0.100)
+    assert geometry_cfg["wrist_length"] == pytest.approx(0.049)
+    assert geometry_cfg["shoulder_joint_height"] > geometry_cfg["base_height"]
 
 
 def test_load_arm_config() -> None:

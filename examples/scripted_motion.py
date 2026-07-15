@@ -12,38 +12,12 @@ limits.
 from __future__ import annotations
 
 import sys
-from collections.abc import Iterator, Mapping
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from butter_finger import BackendUnavailableError, PyBulletArm
-
-
-def interpolate_pose(
-    start: Mapping[str, float],
-    target: Mapping[str, float],
-    duration: float,
-    control_rate: float,
-) -> Iterator[dict[str, float]]:
-    """Yield smoothstep-interpolated poses from start to target."""
-    steps = max(1, round(duration * control_rate))
-    for step in range(1, steps + 1):
-        alpha = step / steps
-        smooth_alpha = 3 * alpha**2 - 2 * alpha**3
-        yield {
-            joint: start[joint]
-            + smooth_alpha * (target[joint] - start[joint])
-            for joint in target
-        }
-
-
-def move_smoothly(arm: PyBulletArm, target: Mapping[str, float], duration: float) -> None:
-    start = arm.get_joint_positions()
-    for pose in interpolate_pose(start, target, duration, arm.config.control_rate_hz):
-        arm.move_joints(pose)
-        arm.step(realtime=True)
 
 
 def main() -> int:
@@ -61,16 +35,19 @@ def main() -> int:
         arm.go_home()
 
         print("2/5  Rotating base...")
-        move_smoothly(arm, {"base": 1.0}, duration=2.0)
+        arm.move_joint("base", 1.0, duration_s=2.0)
 
         print("3/5  Reaching with shoulder and elbow...")
-        move_smoothly(arm, {"shoulder": 0.7, "elbow": -1.1}, duration=2.5)
+        arm.move_joints(
+            {"shoulder": 0.7, "elbow": -1.1},
+            duration_s=2.5,
+        )
 
         print("4/5  Tilting wrist...")
-        move_smoothly(arm, {"wrist": 0.6}, duration=1.5)
+        arm.move_joint("wrist", 0.6, duration_s=1.5)
 
         print("5/5  Returning home...")
-        move_smoothly(arm, home, duration=3.0)
+        arm.move_joints(home, duration_s=3.0)
         arm.run_for(1.0)
 
         print("Final joint positions (rad):")
