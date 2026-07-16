@@ -31,7 +31,7 @@ def main() -> int:
     with arm:
         print("Butter Finger joint sliders")
         print(f"  Time step: {arm.time_step_s:.6f} s ({arm.config.control_rate_hz:g} Hz)")
-        print("  Sliders (radians, temporary simulation limits):")
+        print("  Sliders (radians, shared calibrated limits):")
         sliders: dict[str, int] = {}
         for joint in arm.joint_names:
             limits = arm.config.sim_limits[joint]

@@ -1,13 +1,12 @@
-# Butter Finger — named simulation actions
+# Butter Finger — named arm actions
 #
-# All targets are absolute SIMULATION joint positions in RADIANS. These
-# development-only actions are not calibrated for the physical arm and must
-# never be sent to PWMRobotArm. A step may reference a full named pose from
+# All targets are absolute joint positions in RADIANS within the shared
+# calibrated command domain. A step may reference a full named pose from
 # poses.yaml or provide targets_rad for only the joints that should move.
 
 actions:
   home:
-    description: "Move to the neutral simulated reference pose."
+    description: "Move to the configured neutral reference pose."
     steps:
       - pose: sim_home
         duration_s: 2.0
@@ -41,9 +40,9 @@ actions:
         duration_s: 3.0
 
   wrist_up:
-    description: "Tilt only the wrist to +0.6 rad."
+    description: "Tilt only the wrist to +0.15 rad."
     steps:
-      - targets_rad: {wrist: 0.6}
+      - targets_rad: {wrist: 0.15}
         duration_s: 1.5
 
   wrist_down:

@@ -1,9 +1,9 @@
 """Load and validate the YAML configuration files.
 
 Keeps the configuration concepts separate (see config/joints.yaml):
-simulation radians, recorded physical PWM microseconds, verified hardware
-limits, temporary simulation limits, named poses, named actions,
-simulation-only idle behavior, and simulation-only camera rendering.
+shared calibrated radians, physical PWM microseconds, verified hardware
+limits, named poses, named actions, simulation-only idle behavior, and
+simulation-only camera rendering.
 """
 from __future__ import annotations
 
@@ -27,10 +27,16 @@ URDF_JOINT_NAMES: dict[str, str] = {name: f"{name}_joint" for name in JOINT_NAME
 
 @dataclass(frozen=True)
 class JointLimits:
-    """Temporary simulation limits in radians. NOT physical calibration."""
+    """Inclusive joint command limits in radians."""
 
     lower_rad: float
     upper_rad: float
+
+    def __post_init__(self) -> None:
+        lower = _finite_float(self.lower_rad, "lower_rad")
+        upper = _finite_float(self.upper_rad, "upper_rad")
+        if lower >= upper:
+            raise ValueError("joint limits must satisfy lower_rad < upper_rad")
 
     def contains(self, position_rad: float) -> bool:
         return self.lower_rad <= position_rad <= self.upper_rad
@@ -52,17 +58,78 @@ class PulseLimits:
 
 
 @dataclass(frozen=True)
-class PhysicalConfig:
-    """The 'physical' section of config/joints.yaml: recorded hardware data.
+class JointCalibration:
+    """Validated two-point linear mapping between radians and PWM."""
 
-    Used only by the PWM hardware layer on the Raspberry Pi; the simulator
-    never reads these values.
+    lower_rad: float
+    upper_rad: float
+    lower_pwm_us: float
+    upper_pwm_us: float
+
+    def __post_init__(self) -> None:
+        lower_rad = _finite_float(self.lower_rad, "calibration.lower_rad")
+        upper_rad = _finite_float(self.upper_rad, "calibration.upper_rad")
+        lower_pwm = _finite_float(self.lower_pwm_us, "calibration.lower_pwm_us")
+        upper_pwm = _finite_float(self.upper_pwm_us, "calibration.upper_pwm_us")
+        if lower_rad >= upper_rad:
+            raise ValueError("calibration radians must satisfy lower_rad < upper_rad")
+        if lower_pwm == upper_pwm:
+            raise ValueError("calibration PWM endpoints must be different")
+
+    @property
+    def min_pwm_us(self) -> float:
+        return min(self.lower_pwm_us, self.upper_pwm_us)
+
+    @property
+    def max_pwm_us(self) -> float:
+        return max(self.lower_pwm_us, self.upper_pwm_us)
+
+    def contains_rad(self, position_rad: float) -> bool:
+        return self.lower_rad <= position_rad <= self.upper_rad
+
+    def contains_pwm(self, pulse_us: float) -> bool:
+        return self.min_pwm_us <= pulse_us <= self.max_pwm_us
+
+    def rad_to_pwm(self, position_rad: float) -> float:
+        """Interpolate a radian target without clamping or extrapolating."""
+        position = _finite_float(position_rad, "position_rad")
+        if not self.contains_rad(position):
+            raise ValueError(
+                f"{position} rad is outside the calibrated range "
+                f"[{self.lower_rad}, {self.upper_rad}] rad"
+            )
+        fraction = (position - self.lower_rad) / (self.upper_rad - self.lower_rad)
+        return self.lower_pwm_us + fraction * (
+            self.upper_pwm_us - self.lower_pwm_us
+        )
+
+    def pwm_to_rad(self, pulse_us: float) -> float:
+        """Invert an in-range PWM value without clamping or extrapolating."""
+        pulse = _finite_float(pulse_us, "pulse_us")
+        if not self.contains_pwm(pulse):
+            raise ValueError(
+                f"{pulse} us is outside the calibrated range "
+                f"[{self.min_pwm_us}, {self.max_pwm_us}] us"
+            )
+        fraction = (pulse - self.lower_pwm_us) / (
+            self.upper_pwm_us - self.lower_pwm_us
+        )
+        return self.lower_rad + fraction * (self.upper_rad - self.lower_rad)
+
+
+@dataclass(frozen=True)
+class PhysicalConfig:
+    """Validated hardware data and radians/PWM calibration.
+
+    The PWM layer uses ports and pulse limits. RaspberryPiArm additionally
+    uses the per-joint linear calibrations.
     """
 
     joint_order: tuple[str, ...]
     pwm_ports: dict[str, int]
     home_pwm_us: dict[str, int]
     pulse_limits_us: dict[str, PulseLimits]
+    calibrations: dict[str, JointCalibration]
 
 
 @dataclass(frozen=True)
@@ -116,7 +183,7 @@ class CameraConfig:
 
 @dataclass(frozen=True)
 class ActionStep:
-    """One timed action step, expressed only in simulation radians."""
+    """One timed action step expressed in calibrated radians."""
 
     targets_rad: Mapping[str, float]
     duration_s: float
@@ -133,7 +200,7 @@ class ArmAction:
 
 @dataclass(frozen=True)
 class ActionConfig:
-    """Validated named actions. These are not approved for real hardware."""
+    """Validated named actions in the shared radians command domain."""
 
     actions: Mapping[str, ArmAction]
 
@@ -193,12 +260,7 @@ def _vector3(value: Any, label: str) -> tuple[float, float, float]:
 
 
 def load_arm_config(config_dir: Path = CONFIG_DIR) -> ArmConfig:
-    """Load the simulation-facing configuration.
-
-    Only reads the simulation sections; the recorded physical PWM data is
-    historical calibration for the future Raspberry Pi backend and is
-    deliberately not exposed here.
-    """
+    """Load shared radians limits, poses, and simulation control parameters."""
     joints_cfg = _load_yaml(config_dir / "joints.yaml")
     poses_cfg = _load_yaml(config_dir / "poses.yaml")
 
@@ -211,13 +273,31 @@ def load_arm_config(config_dir: Path = CONFIG_DIR) -> ArmConfig:
 
     limits_raw = joints_cfg["simulation"]["limits_rad"]
     sim_limits = {
-        name: JointLimits(float(limits_raw[name]["lower"]), float(limits_raw[name]["upper"]))
+        name: JointLimits(
+            _finite_float(limits_raw[name]["lower"], f"{name}.limits_rad.lower"),
+            _finite_float(limits_raw[name]["upper"], f"{name}.limits_rad.upper"),
+        )
         for name in joint_order
     }
+    physical_config = load_physical_config(config_dir)
+    for name in joint_order:
+        limits = sim_limits[name]
+        calibration = physical_config.calibrations[name]
+        if (
+            limits.lower_rad != calibration.lower_rad
+            or limits.upper_rad != calibration.upper_rad
+        ):
+            raise ValueError(
+                f"{name}: simulation limits must match the physical "
+                "calibration radians exactly"
+            )
 
     poses: dict[str, dict[str, float]] = {}
     for pose_name, pose in poses_cfg["poses"].items():
-        poses[pose_name] = {joint: float(angle) for joint, angle in pose.items()}
+        poses[pose_name] = {
+            joint: _finite_float(angle, f"Pose {pose_name!r} target for {joint!r}")
+            for joint, angle in pose.items()
+        }
         for joint, angle in poses[pose_name].items():
             if joint not in sim_limits:
                 raise ValueError(f"Pose {pose_name!r} references unknown joint {joint!r}")
@@ -228,13 +308,21 @@ def load_arm_config(config_dir: Path = CONFIG_DIR) -> ArmConfig:
                 )
 
     control = joints_cfg["simulation"]["control"]
+    max_force_nm = _finite_float(control["max_force_nm"], "control.max_force_nm")
+    max_velocity_rad_s = _finite_float(
+        control["max_velocity_rad_s"], "control.max_velocity_rad_s"
+    )
+    control_rate_hz = _finite_float(control["control_rate_hz"], "control.control_rate_hz")
+    if max_force_nm <= 0 or max_velocity_rad_s <= 0 or control_rate_hz <= 0:
+        raise ValueError("simulation control values must be greater than zero")
+
     return ArmConfig(
         joint_order=joint_order,
         sim_limits=sim_limits,
         poses=poses,
-        max_force_nm=float(control["max_force_nm"]),
-        max_velocity_rad_s=float(control["max_velocity_rad_s"]),
-        control_rate_hz=float(control["control_rate_hz"]),
+        max_force_nm=max_force_nm,
+        max_velocity_rad_s=max_velocity_rad_s,
+        control_rate_hz=control_rate_hz,
     )
 
 
@@ -335,7 +423,7 @@ def load_action_config(
     config_dir: Path = CONFIG_DIR,
     arm_config: ArmConfig | None = None,
 ) -> ActionConfig:
-    """Load simulation-only named actions and resolve named pose references."""
+    """Load named actions and resolve pose references in calibrated radians."""
     arm_config = arm_config if arm_config is not None else load_arm_config(config_dir)
     actions_cfg = _load_yaml(config_dir / "actions.yaml")
     if not isinstance(actions_cfg, dict) or not isinstance(actions_cfg.get("actions"), dict):
@@ -497,11 +585,9 @@ def load_idle_config(
 
 
 def load_physical_config(config_dir: Path = CONFIG_DIR) -> PhysicalConfig:
-    """Load the recorded physical hardware data (PWM microseconds).
+    """Load physical hardware data and measured two-point calibration.
 
-    This is the tested calibration record used by the PWM hardware layer
-    (backends/pwm_robot_arm.py) on the Raspberry Pi. It is validated so a
-    home pose outside the tested pulse limits fails at load time.
+    Home and calibration pulses must remain inside tested hardware limits.
     """
     joints_cfg = _load_yaml(config_dir / "joints.yaml")
     physical = joints_cfg["physical"]
@@ -513,12 +599,46 @@ def load_physical_config(config_dir: Path = CONFIG_DIR) -> PhysicalConfig:
             f"expected joints {JOINT_NAMES}"
         )
 
-    pwm_ports = {name: int(physical["pwm_ports"][name]) for name in joint_order}
-    home_pwm_us = {name: int(physical["home_pwm_us"][name]) for name in joint_order}
+    pwm_ports = {
+        name: _positive_int(physical["pwm_ports"][name], f"{name}.pwm_port")
+        for name in joint_order
+    }
+    home_pwm_us = {
+        name: _positive_int(physical["home_pwm_us"][name], f"{name}.home_pwm_us")
+        for name in joint_order
+    }
     pulse_limits_us = {
         name: PulseLimits(
-            int(physical["tested_pwm_limits_us"][name]["min"]),
-            int(physical["tested_pwm_limits_us"][name]["max"]),
+            _positive_int(
+                physical["tested_pwm_limits_us"][name]["min"],
+                f"{name}.tested_pwm_limits_us.min",
+            ),
+            _positive_int(
+                physical["tested_pwm_limits_us"][name]["max"],
+                f"{name}.tested_pwm_limits_us.max",
+            ),
+        )
+        for name in joint_order
+    }
+    calibration_raw = physical["calibration"]
+    calibrations = {
+        name: JointCalibration(
+            lower_rad=_finite_float(
+                calibration_raw[name]["lower"]["rad"],
+                f"{name}.calibration.lower.rad",
+            ),
+            upper_rad=_finite_float(
+                calibration_raw[name]["upper"]["rad"],
+                f"{name}.calibration.upper.rad",
+            ),
+            lower_pwm_us=_finite_float(
+                calibration_raw[name]["lower"]["pwm_us"],
+                f"{name}.calibration.lower.pwm_us",
+            ),
+            upper_pwm_us=_finite_float(
+                calibration_raw[name]["upper"]["pwm_us"],
+                f"{name}.calibration.upper.pwm_us",
+            ),
         )
         for name in joint_order
     }
@@ -532,10 +652,22 @@ def load_physical_config(config_dir: Path = CONFIG_DIR) -> PhysicalConfig:
                 f"{name}: home pulse {home_pwm_us[name]} us is outside the "
                 f"tested range [{limits.min_us}, {limits.max_us}] us"
             )
+        calibration = calibrations[name]
+        for endpoint, pulse_us in (
+            ("lower", calibration.lower_pwm_us),
+            ("upper", calibration.upper_pwm_us),
+        ):
+            if not limits.contains(pulse_us):
+                raise ValueError(
+                    f"{name}: calibration {endpoint} pulse {pulse_us} us is "
+                    f"outside the tested range [{limits.min_us}, "
+                    f"{limits.max_us}] us"
+                )
 
     return PhysicalConfig(
         joint_order=joint_order,
         pwm_ports=pwm_ports,
         home_pwm_us=home_pwm_us,
         pulse_limits_us=pulse_limits_us,
+        calibrations=calibrations,
     )

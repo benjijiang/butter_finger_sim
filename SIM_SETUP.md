@@ -88,11 +88,11 @@ python examples/camera_snapshot.py
 
 - `view_robot.py` — displays the arm; close the PyBullet window to exit.
 - `joint_sliders.py` — one slider per joint (base, shoulder, elbow, wrist),
-  in radians, using the temporary simulation limits.
+  in radians, using the shared calibrated limits.
 - `scripted_motion.py` — smoothstep motion sequence: home → base → shoulder
   and elbow → wrist → home.
-- `run_action.py --list` — lists the validated, config-driven simulation
-  actions without opening PyBullet.
+- `run_action.py --list` — lists the validated, config-driven actions without
+  opening a backend.
 - `run_action.py <name>` — runs one action from `config/actions.yaml` in the
   GUI. In addition to the utility actions, twenty camera-as-face gestures cover
   greeting, agreement, positive, reflective, low-energy, and reactive moods.
@@ -106,19 +106,50 @@ python examples/camera_snapshot.py
 - There is also `python examples/go_home.py`, which moves the arm to the
   simulated reference pose.
 
-The named actions and idle scan use temporary radians and are not approved for
-the physical PWM-controlled arm. Emotional `duration_s` values are intentional:
-short steps communicate surprise, fear, excitement, or force, while long steps
-communicate affection, thought, sadness, or fatigue. A timed simulator move
-uses smoothstep interpolation at the configured 240 Hz control rate; idle and
-slider target updates omit the duration and remain non-blocking.
+Named actions use the shared calibrated radian domain. Emotional `duration_s`
+values are intentional: short steps communicate surprise, fear, excitement,
+or force, while long steps communicate affection, thought, sadness, or
+fatigue. These speeds and load behavior remain unverified on the real arm. A
+timed simulator move uses smoothstep interpolation at the configured 240 Hz
+control rate; idle and slider target updates omit the duration and remain
+non-blocking. Continuous `IdleController` motion remains simulation-only.
 
 The camera renders natively at `640×480`, then rotates the RGB frame 90°
 clockwise to a `480×640` portrait image. Its `120°` vertical FOV is a temporary
 pinhole approximation; exact intrinsics and wide-angle distortion still need
 physical checkerboard calibration.
 
-## 6. Deactivate / reactivate the environment
+## 6. Run calibrated actions on the Raspberry Pi
+
+The same action CLIs can select the real radians backend. Run them only on the
+Pi connected to the arm, keep the mechanism clear, and include the explicit
+hardware acknowledgement:
+
+```bash
+python examples/run_action.py happy --backend real --confirm-hardware
+python examples/emotion_showcase.py happy curious --backend real --confirm-hardware
+```
+
+Both commands first send the exact recorded physical home PWM. Every action is
+fully prechecked before its first movement. Out-of-calibration targets are
+rejected rather than clamped or extrapolated. The emotional showcase waits
+between real actions; it does not run the high-frequency idle scan.
+
+Python API:
+
+```python
+from butter_finger import RaspberryPiArm
+
+with RaspberryPiArm() as arm:
+    arm.go_home()
+    arm.move_joints({"base": 0.3, "shoulder": -0.5}, duration_s=2.0)
+```
+
+The real arm has no verified shaft-angle feedback. Returned positions are
+last-command estimates, and the two-point mapping does not validate speed,
+torque, backlash, or behavior under load.
+
+## 7. Deactivate / reactivate the environment
 
 ```bash
 # leave the virtual environment

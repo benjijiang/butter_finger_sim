@@ -3,31 +3,27 @@
 # This project deliberately separates these configuration concepts. Never mix:
 #
 #   1. Simulation joint positions ....... radians (see config/poses.yaml)
-#   2. Recorded physical PWM data ....... microseconds (historical, below)
+#   2. Measured joint calibration ....... radians <-> microseconds (below)
 #   3. Verified hardware limits ......... microseconds (tested, below)
-#   4. Temporary simulation limits ...... radians (development-only, below)
+#   4. Shared command limits ............. radians (below)
 #   5. Named poses ...................... config/poses.yaml
-#   6. Named action sequences ........... config/actions.yaml (sim-only)
+#   6. Named action sequences ........... config/actions.yaml
 #   7. Dynamic idle behavior ............ config/idle.yaml (sim-only)
-#
-# There is NO PWM-to-angle conversion anywhere in this repository yet,
-# because no measured angle calibration exists. Do not invent one.
 
 joint_order: [base, shoulder, elbow, wrist]
 
 # ---------------------------------------------------------------------------
-# PHYSICAL HARDWARE DATA — NOT used by the simulator; this is the source of
-# truth for the PWM hardware layer (src/butter_finger/backends/pwm_robot_arm.py)
-# that drives the real arm on the Raspberry Pi.
+# PHYSICAL HARDWARE DATA — source of truth for calibrated command endpoints
+# and the PWM hardware layer (src/butter_finger/backends/pwm_robot_arm.py)
+# that drives the real arm on the Raspberry Pi. The simulator limits below
+# must match the calibration's radian endpoints.
 # Hardware: Raspberry Pi 5 -> UART (/dev/ttyAMA0 @ 1000000) ->
 #           Hiwonder RasAdapter5A V1.0 -> servo PWM
 # ---------------------------------------------------------------------------
 physical:
   controller: "Hiwonder RasAdapter5A V1.0 (UART from Raspberry Pi 5)"
 
-  # Servo model per joint (confirmed by the user 2026-07-14). Model names
-  # only — datasheet pulse/angle specs are deliberately NOT recorded here;
-  # PWM-to-angle calibration must be measured on the real arm, never assumed.
+  # Servo model per joint (confirmed by the user 2026-07-14).
   servo_models:
     base: "SG90"
     shoulder: "LD-1501MG"   # larger, higher-torque metal-gear servo
@@ -58,6 +54,22 @@ physical:
     elbow:    {min: 505, max: 2495}
     wrist:    {min: 505, max: 2495}
 
+  # Measured two-point linear calibration. Interpolation between the points
+  # is allowed; commands outside either radian interval are rejected.
+  calibration:
+    base:
+      lower: {rad: -1.5708, pwm_us: 510}
+      upper: {rad: 1.5708, pwm_us: 2490}
+    shoulder:
+      lower: {rad: -1.530, pwm_us: 1200}
+      upper: {rad: 0.0, pwm_us: 2200}
+    elbow:
+      lower: {rad: -3.075, pwm_us: 510}
+      upper: {rad: 0.065, pwm_us: 2490}
+    wrist:
+      lower: {rad: -2.9824, pwm_us: 510}
+      upper: {rad: 0.1576, pwm_us: 2490}
+
   notes:
     shoulder_home: >
       The recorded shoulder home value (2200 us) sits only 20 us below the
@@ -87,17 +99,14 @@ simulation:
     elbow: 0.0
     wrist: 0.0
 
-  # Development-only simulation limits. Shoulder and elbow were updated from
-  # simulator range checks on 2026-07-16; these are NOT physical calibration.
-  # The wrist range is shifted another 0.2 rad in the negative direction. It
-  # now extends 0.5 rad past the configured -1.571 rad home position.
-  # Zero radians is a mathematical joint coordinate, NOT a servo's electrical
-  # midpoint.
+  # Shared command limits, aligned exactly with the physical calibration.
+  # Zero radians is a mathematical joint coordinate, not necessarily a
+  # servo's electrical midpoint.
   limits_rad:
     base:     {lower: -1.5708, upper: 1.5708}
-    shoulder: {lower: -1.571, upper: 0.050}
+    shoulder: {lower: -1.530, upper: 0.0}
     elbow:    {lower: -3.075, upper: 0.065}
-    wrist:    {lower: -2.071, upper: 1.0708}
+    wrist:    {lower: -2.9824, upper: 0.1576}
 
   # Position-control parameters (placeholders; not measured servo specs).
   control:

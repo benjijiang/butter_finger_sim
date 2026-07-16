@@ -49,6 +49,11 @@ without the physical arm nearby. This is a functional approximate model,
   historical values (510–2490 / shoulder max 2215) and is superseded.
 - The shoulder home (2200 µs, 20 µs below its tested maximum) was
   revalidated on the real machine on 2026-07-13 and confirmed safe.
+- Measured two-point radians/PWM calibration:
+  base `-1.5708→510`, `1.5708→2490`; shoulder `-1.530→1200`,
+  `0→2200`; elbow `-3.075→510`, `0.065→2490`; wrist
+  `-2.9824→510`, `0.1576→2490`. Values between endpoints use linear
+  interpolation; extrapolation is forbidden.
 - The SDK also exposes `pwm_servo_read_position/offset`; whether it returns
   the true shaft angle or just the last commanded value is UNVERIFIED.
 - Real-machine motion timing validated in the original tests: single joint
@@ -62,8 +67,8 @@ without the physical arm nearby. This is a functional approximate model,
 
 - Independent physical validation of the recovered CAD geometry, exported
   joint frames, masses, centers of mass, and inertia tensors.
-- Real joint angular ranges and servo rotation directions.
-- PWM-to-angle calibration (none exists — no conversion code anywhere yet).
+- Linearity/repeatability between the measured calibration endpoints,
+  especially under load.
 - Real servo torque/speed, backlash, and compliance.
 - Independent physical validation of the recorded camera transform.
 - Exact camera FOV, intrinsic matrix, and lens-distortion coefficients.
@@ -77,13 +82,12 @@ earlier drawing dimensions (base 0.03253, shoulder height 0.07390, upper arm
 0.1452, forearm 0.100, wrist-to-tip 0.049) are retained there for comparison.
 
 `scripts/generate_urdf.py` regenerates `models/butter_finger_simple.urdf`.
-Development-only simulation limits are base ±1.5708 rad, shoulder
--1.571–0.050 rad, elbow -3.075–0.065 rad, and wrist -2.071–1.0708 rad.
-All joint zeros remain the exported SolidWorks assembly pose; no URDF joint
-frame offset is applied. Wrist `sim_home` is -1.571 rad, and its activity
-range was shifted a total of 0.5 rad in the negative direction so the lower
-limit extends 0.5 rad beyond home. None of these coordinates are servo electrical
-calibration.
+Shared calibrated limits are base ±1.5708 rad, shoulder -1.530–0 rad,
+elbow -3.075–0.065 rad, and wrist -2.9824–0.1576 rad. PyBullet and the
+physical radians backend use the same command domain. All joint zeros remain
+the exported SolidWorks assembly pose; no URDF joint-frame offset is applied.
+`sim_home` is `[0, 0, 0.065, -1.571]` rad and maps, after PWM rounding, to
+the exact recorded physical home `[1500, 2200, 2490, 1400]` µs.
 
 The fixed `camera_link` uses the recorded optical-center offset
 `[0.011, 0.044, 0.013]` m from `wrist_link`, with local `+Y` forward and
@@ -94,41 +98,41 @@ The current 120-degree vertical FOV and pinhole model are provisional.
 
 `idle_ready` is the conversational hand-off pose
 `[base=0.0, shoulder=-0.3, elbow=-0.5, wrist=-1.0]` rad. Twenty
-simulation-only emotional actions begin and end there. Their per-step
+calibrated-radian emotional actions begin and end there. Their per-step
 `duration_s` values are an intentional part of the expression: short motion
 reads as alert/forceful and long motion reads as gentle/reflective/tired.
 `config/idle.yaml` defines the no-person fallback base scan; it is not person
-tracking and contains no physical calibration.
+tracking and remains simulation-only as a continuously streamed controller.
 
 ## Architectural rules
 
-1. Simulation-facing application code uses **radians only**, through the
+1. Application code uses **radians only**, through the
    `ArmBackend` interface in `src/butter_finger/arm.py`. Joint commands accept
    optional `duration_s`: omitted means a non-blocking target update; provided
    means a blocking timed move using backend-specific interpolation.
-2. Real-hardware control happens at the PWM layer:
-   `backends/pwm_robot_arm.py` (`PWMRobotArm`, microseconds, Pi only). It
+2. `RaspberryPiArm` is the normal real-hardware `ArmBackend`. It validates
+   and converts radians through per-joint two-point calibration, then wraps
+   `backends/pwm_robot_arm.py` (`PWMRobotArm`, microseconds, Pi only). The PWM layer
    reads ports/limits/home from the `physical` section of
    `config/joints.yaml` and lazily imports the external SDK
    (`ros_robot_controller_sdk`) from `sys.path`, `$BUTTER_FINGER_SDK_PATH`,
    or the directory containing this checkout. The SDK is never vendored.
-3. `RaspberryPiArm` (radians) stays a `NotImplementedError` stub until
-   measured PWM-to-angle calibration exists for every joint; it will then be
-   built on top of the PWM layer.
+3. `RaspberryPiArm` must reject unknown joints, non-finite values, and
+   out-of-calibration radians before any PWM call. It never clamps or
+   extrapolates. Its joint positions are last-command estimates, not feedback.
 4. Keep the configuration concepts separate (see `config/joints.yaml` header):
-   sim radians, recorded PWM, verified hardware limits, temporary sim limits,
-   named poses, named action sequences, simulation idle behavior, and camera
-   rendering. `config/actions.yaml` and `config/idle.yaml` are simulation-only
-   until calibration and explicit real-machine approval.
+   calibrated radians, measured radians/PWM endpoints, recorded home PWM,
+   verified hardware limits, named poses/actions, simulation idle behavior,
+   and camera rendering. Named actions may use either backend; continuous
+   `config/idle.yaml` control remains simulation-only.
 5. URDF joint names are fixed: `base_joint`, `shoulder_joint`,
    `elbow_joint`, `wrist_joint`, plus fixed `camera_link`. Never rename.
 6. CAD link names from the export are mapped onto the fixed repository names;
  exported SW2URDF zero-width limits are never used.
 7. Timed motion is unified at the radians API boundary: `PyBulletArm`
-   performs 240 Hz smoothstep interpolation, while the future calibrated
-   `RaspberryPiArm` will forward the same duration to `PWMRobotArm`, whose
-   controller performs interpolation. `RaspberryPiArm` remains unavailable
-   until calibration exists.
+   performs 240 Hz smoothstep interpolation. `RaspberryPiArm` forwards the
+   same duration to `PWMRobotArm`, whose controller interpolates, and waits
+   for completion before returning.
 8. Camera rendering is a simulation-only `PyBulletArm.capture_rgb()` capability
    and does not extend `ArmBackend` or either real-hardware backend. Camera
    parameters live in `config/camera.yaml`, separate from joint/control data.
@@ -139,15 +143,15 @@ tracking and contains no physical calibration.
 
 ## Safety rules
 
-- **Never command real hardware using placeholder (simulation) limits.**
-  Real commands go only through `PWMRobotArm`, which enforces the tested
-  pulse ranges from `config/joints.yaml` and rejects (never clamps)
-  out-of-range pulses.
+- Real radian commands go through `RaspberryPiArm`; direct `PWMRobotArm`
+  use is only for intentional low-level diagnostics. Both layers enforce
+  their configured ranges and reject rather than clamp.
+- `ActionRunner` prechecks every step before the first step moves. Real CLI
+  modes require `--confirm-hardware` and perform exact physical home first.
 - Never import hardware libraries (serial/GPIO) directly in this repository;
   hardware access goes only through the external SDK, loaded lazily by
   `PWMRobotArm` at instantiation.
-- The future radians backend must reject (not clamp) commands without
-  verified calibration.
+- Do not treat `get_joint_positions()` on the Pi as sensor feedback.
 
 ## CAD follow-up plan
 
@@ -165,7 +169,7 @@ simplified convex meshes. Joint names and the control API must not change.
  (2026-07-14).
 - [x] First run on the Linux sim machine: `pytest` green, sliders working
       (see SIM_SETUP.md).
-- [x] Add validated config-driven simulation actions and optional timed
+- [x] Add validated config-driven actions and optional timed
       `ArmBackend` moves: six utility actions plus 20 duration-designed
       conversational emotional gestures.
 - [x] Add a non-blocking simulation-only idle scan around `idle_ready`, plus
@@ -174,7 +178,9 @@ simplified convex meshes. Joint names and the control API must not change.
  joint transforms, and inertial properties (2026-07-16).
 - [ ] Verify CAD transforms and mass properties against the physical arm;
  simplify collision meshes.
-- [ ] Measure PWM-to-angle calibration per joint; record verified limits.
-- [ ] Implement `RaspberryPiArm` (radians) on top of the PWM layer.
+- [x] Record measured two-point PWM-to-angle calibration per joint and align
+      simulation limits/actions to it (2026-07-16).
+- [x] Implement `RaspberryPiArm` (radians), full-action precheck, exact home,
+      and sim/real action CLI switching (2026-07-16).
 - [x] Camera RGB rendering from `camera_link` with provisional pinhole
       intrinsics; physical checkerboard calibration remains.

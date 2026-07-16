@@ -1,10 +1,4 @@
-"""Backend-neutral scheduling for validated, timed arm actions.
-
-The bundled actions currently contain development-only simulation radians.
-The runner depends only on ArmBackend so a future calibrated RaspberryPiArm
-can use the same scheduling path, but these actions must not be selected for
-real hardware until their targets have been measured and approved.
-"""
+"""Backend-neutral scheduling for validated, timed arm actions."""
 from __future__ import annotations
 
 from butter_finger.arm import ArmBackend
@@ -41,6 +35,8 @@ class ActionRunner:
     def run(self, name: str) -> None:
         """Run every step in ``name`` synchronously, in configured order."""
         action = self.get_action(name)
+        for step in action.steps:
+            self.arm.validate_targets(step.targets_rad)
         for step in action.steps:
             self.arm.move_joints(
                 step.targets_rad,

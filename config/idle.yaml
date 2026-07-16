@@ -1,9 +1,10 @@
 # Butter Finger — simulation-only idle behavior
 #
-# This slow scan is the fallback when no person is being tracked. It uses
-# temporary simulator radians and must not be sent to PWMRobotArm. A future
-# attention controller can pause this behavior while commanding person-follow
-# targets, then call IdleController.resume() when the person is lost.
+# This slow scan is the fallback when no person is being tracked. Its targets
+# are in the calibrated domain, but its high-frequency non-blocking update
+# pattern has not been approved for real hardware. A future attention
+# controller can pause it while commanding person-follow targets, then call
+# IdleController.resume() when the person is lost.
 
 idle:
   pose: idle_ready

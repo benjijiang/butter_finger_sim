@@ -1,49 +1,127 @@
-"""Stub for the future RADIANS physical-arm backend on the Raspberry Pi 5.
+"""Calibrated radians backend for the physical Raspberry Pi arm.
 
-NOT IMPLEMENTED. This file exists only to reserve the architectural seam.
-It imports no hardware library and must never gain a real servo command
-until every safety precondition below is met.
-
-Real hardware is currently driven at the PWM level instead: see
-backends/pwm_robot_arm.py (PWMRobotArm, microseconds), the verified port of
-the original board_demo control code. This stub is the future radians
-adapter that will sit on top of that PWM layer.
-
-Data path (for reference only):
+Data path:
 
     Raspberry Pi 5 --UART--> Hiwonder RasAdapter5A V1.0 --PWM--> servos
 
     PWM ports: base=1, shoulder=3, elbow=4, wrist=5 (2 and 6 unused).
 
-Safety preconditions before implementing:
-  1. Measured PWM-to-angle calibration for every joint (none exists yet).
-  2. Verified safe PWM limits for every joint. Tested on the real machine:
-     base/elbow/wrist 505-2495 us, shoulder 1200-2220 us. The shoulder home
-     value (2200 us) was revalidated on 2026-07-13.
-  3. Commands without verified calibration must be rejected, never clamped
-     to guesses.
-
-Never command real hardware using the placeholder simulation limits.
+The adapter only interpolates within measured two-point calibration ranges.
+It never clamps or extrapolates. The hardware is open-loop, so reported
+positions are the last complete command estimate, not sensor feedback.
 """
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 
-from butter_finger.arm import ArmBackend
-
-_NOT_IMPLEMENTED_MSG = (
-    "RaspberryPiArm (radians) is not implemented yet: no measured "
-    "PWM-to-angle calibration exists. Use PyBulletArm for simulation, or "
-    "PWMRobotArm (PWM microseconds) to drive the real arm on the "
-    "Raspberry Pi."
+from butter_finger.arm import (
+    ArmBackend,
+    JointLimitError,
+    JointStateUnavailableError,
+    UnknownJointError,
 )
+from butter_finger.backends.pwm_robot_arm import PWMRobotArm
+from butter_finger.config import PhysicalConfig, load_physical_config
+
+_HOME_DURATION_S = 3.0
 
 
 class RaspberryPiArm(ArmBackend):
-    """Placeholder for the physical Butter Finger arm. Raises on every call."""
+    """Physical arm adapter accepting only calibrated radian targets.
 
-    def __init__(self) -> None:
-        raise NotImplementedError(_NOT_IMPLEMENTED_MSG)
+    ``pwm_arm`` may be injected for tests. When omitted, constructing this
+    class lazily opens the real Hiwonder board through ``PWMRobotArm``.
+    """
+
+    def __init__(
+        self,
+        pwm_arm: PWMRobotArm | None = None,
+        config: PhysicalConfig | None = None,
+    ) -> None:
+        pwm_config = (
+            pwm_arm.config
+            if pwm_arm is not None and hasattr(pwm_arm, "config")
+            else None
+        )
+        if config is None:
+            config = pwm_config if pwm_config is not None else load_physical_config()
+        elif pwm_config is not None and config != pwm_config:
+            raise ValueError(
+                "RaspberryPiArm and its injected PWMRobotArm must use the "
+                "same PhysicalConfig"
+            )
+        self._config = config
+        self._pwm_arm = (
+            pwm_arm if pwm_arm is not None else PWMRobotArm(config=self._config)
+        )
+        self._last_commanded_rad: dict[str, float] = {}
+
+    @property
+    def config(self) -> PhysicalConfig:
+        return self._config
+
+    @property
+    def joint_names(self) -> tuple[str, ...]:
+        return self._config.joint_order
+
+    def _validate_joint(self, joint: str) -> None:
+        if joint not in self._config.calibrations:
+            raise UnknownJointError(
+                f"Unknown joint {joint!r}; expected one of "
+                f"{list(self._config.joint_order)}"
+            )
+
+    def _validated_targets(
+        self, targets_rad: Mapping[str, float]
+    ) -> dict[str, float]:
+        validated: dict[str, float] = {}
+        for joint, raw_position in targets_rad.items():
+            self._validate_joint(joint)
+            if (
+                isinstance(raw_position, bool)
+                or not isinstance(raw_position, (int, float))
+                or not math.isfinite(raw_position)
+            ):
+                raise ValueError(
+                    f"Target for joint {joint!r} must be a finite number"
+                )
+            position = float(raw_position)
+            calibration = self._config.calibrations[joint]
+            if not calibration.contains_rad(position):
+                raise JointLimitError(
+                    f"Target {position} rad for joint {joint!r} is outside "
+                    f"the calibrated range [{calibration.lower_rad}, "
+                    f"{calibration.upper_rad}] rad"
+                )
+            validated[joint] = position
+        return validated
+
+    @staticmethod
+    def _validate_duration(duration_s: float | None) -> None:
+        if duration_s is None:
+            return
+        if (
+            isinstance(duration_s, bool)
+            or not isinstance(duration_s, (int, float))
+            or not math.isfinite(duration_s)
+            or duration_s <= 0
+        ):
+            raise ValueError("duration_s must be a finite number greater than zero")
+
+    def validate_targets(self, targets_rad: Mapping[str, float]) -> None:
+        """Validate all radians without issuing a PWM command."""
+        self._validated_targets(targets_rad)
+
+    def rad_to_pwm(self, joint: str, position_rad: float) -> float:
+        """Convert one validated joint target to an unrounded PWM value."""
+        position = self._validated_targets({joint: position_rad})[joint]
+        return self._config.calibrations[joint].rad_to_pwm(position)
+
+    def pwm_to_rad(self, joint: str, pulse_us: float) -> float:
+        """Convert an in-calibration PWM value to its radian estimate."""
+        self._validate_joint(joint)
+        return self._config.calibrations[joint].pwm_to_rad(pulse_us)
 
     def move_joint(
         self,
@@ -52,7 +130,7 @@ class RaspberryPiArm(ArmBackend):
         *,
         duration_s: float | None = None,
     ) -> None:
-        raise NotImplementedError(_NOT_IMPLEMENTED_MSG)
+        self.move_joints({joint: position_rad}, duration_s=duration_s)
 
     def move_joints(
         self,
@@ -60,13 +138,52 @@ class RaspberryPiArm(ArmBackend):
         *,
         duration_s: float | None = None,
     ) -> None:
-        raise NotImplementedError(_NOT_IMPLEMENTED_MSG)
+        targets = self._validated_targets(targets_rad)
+        self._validate_duration(duration_s)
+        if not targets:
+            return
+
+        targets_pwm = {
+            joint: self._config.calibrations[joint].rad_to_pwm(position)
+            for joint, position in targets.items()
+        }
+        if duration_s is None:
+            self._pwm_arm.move_joints(targets_pwm)
+        else:
+            duration = float(duration_s)
+            self._pwm_arm.move_joints(targets_pwm, duration=duration)
+        self._last_commanded_rad.update(targets)
+        if duration_s is not None:
+            self._pwm_arm.wait(float(duration_s))
 
     def get_joint_positions(self) -> dict[str, float]:
-        raise NotImplementedError(_NOT_IMPLEMENTED_MSG)
+        missing = [
+            joint
+            for joint in self._config.joint_order
+            if joint not in self._last_commanded_rad
+        ]
+        if missing:
+            raise JointStateUnavailableError(
+                "The real arm has no joint-angle feedback and no complete "
+                f"last-command estimate yet; missing {missing}. Call go_home() "
+                "or command every joint first."
+            )
+        return {
+            joint: self._last_commanded_rad[joint]
+            for joint in self._config.joint_order
+        }
 
     def go_home(self) -> None:
-        raise NotImplementedError(_NOT_IMPLEMENTED_MSG)
+        self._pwm_arm.home(duration=_HOME_DURATION_S)
+        self._last_commanded_rad = {
+            joint: self._config.calibrations[joint].pwm_to_rad(
+                self._config.home_pwm_us[joint]
+            )
+            for joint in self._config.joint_order
+        }
+        self._pwm_arm.wait(_HOME_DURATION_S)
 
     def disconnect(self) -> None:
-        raise NotImplementedError(_NOT_IMPLEMENTED_MSG)
+        disconnect = getattr(self._pwm_arm, "disconnect", None)
+        if callable(disconnect):
+            disconnect()

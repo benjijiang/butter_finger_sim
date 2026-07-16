@@ -6,8 +6,7 @@ Run on the simulation machine (Linux/Mac), inside the project's .venv:
     python examples/scripted_motion.py
 
 Sequence: home -> rotate base -> reach with shoulder+elbow -> tilt wrist
--> return home. All targets are radians within the temporary simulation
-limits.
+-> return home. All targets are radians within the shared calibrated limits.
 """
 from __future__ import annotations
 
@@ -18,6 +17,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from butter_finger import BackendUnavailableError, PyBulletArm
+
+BASE_TARGET_RAD = 1.0
+REACH_TARGETS_RAD = {"shoulder": -0.7, "elbow": -1.1}
+WRIST_TARGET_RAD = 0.15
 
 
 def main() -> int:
@@ -35,16 +38,16 @@ def main() -> int:
         arm.go_home()
 
         print("2/5  Rotating base...")
-        arm.move_joint("base", 1.0, duration_s=2.0)
+        arm.move_joint("base", BASE_TARGET_RAD, duration_s=2.0)
 
         print("3/5  Reaching with shoulder and elbow...")
         arm.move_joints(
-            {"shoulder": 0.7, "elbow": -1.1},
+            REACH_TARGETS_RAD,
             duration_s=2.5,
         )
 
         print("4/5  Tilting wrist...")
-        arm.move_joint("wrist", 0.6, duration_s=1.5)
+        arm.move_joint("wrist", WRIST_TARGET_RAD, duration_s=1.5)
 
         print("5/5  Returning home...")
         arm.move_joints(home, duration_s=3.0)

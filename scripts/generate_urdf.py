@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Generate the Butter Finger URDF from CAD geometry and simulation config.
+"""Generate the Butter Finger URDF from CAD geometry and joint config.
 
-Run after editing config/geometry.yaml or the simulation section of
+Run after editing config/geometry.yaml or the shared radians limits in
 config/joints.yaml:
 
     python3 scripts/generate_urdf.py
@@ -154,7 +154,7 @@ def main() -> None:
 
   Mesh frames, joint transforms, masses, and inertia tensors were exported
   from SolidWorks with SW2URDF on 2026-07-16. The SW2URDF zero-width limits
-  were intentionally replaced with development-only simulation limits from
+  were intentionally replaced with calibrated command limits from
   config/joints.yaml. The camera frame uses the recorded optical-center
   transform from config/geometry.yaml; its intrinsics remain provisional.
   Load with useFixedBase=True.

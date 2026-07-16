@@ -10,12 +10,18 @@ import yaml
 from butter_finger import (
     ActionRunner,
     ArmBackend,
-    RaspberryPiArm,
     UnknownActionError,
     load_action_config,
     load_arm_config,
+    load_physical_config,
 )
 from butter_finger.backends.pybullet_arm import PyBulletArm, _smoothstep_trajectory
+from examples.go_home import VISIBLE_OFFSET_POSE_RAD
+from examples.scripted_motion import (
+    BASE_TARGET_RAD,
+    REACH_TARGETS_RAD,
+    WRIST_TARGET_RAD,
+)
 
 EXPECTED_ACTIONS = (
     "home",
@@ -52,7 +58,11 @@ EMOTION_ACTIONS = EXPECTED_ACTIONS[6:]
 class FakeArm(ArmBackend):
     def __init__(self) -> None:
         self.calls: list[tuple[dict[str, float], float | None]] = []
+        self.validations: list[dict[str, float]] = []
         self.positions = {joint: 0.0 for joint in load_arm_config().joint_order}
+
+    def validate_targets(self, targets_rad: Mapping[str, float]) -> None:
+        self.validations.append(dict(targets_rad))
 
     def move_joint(
         self,
@@ -138,14 +148,14 @@ def test_loads_expected_actions_and_resolves_poses() -> None:
     assert dict(config.actions["home"].steps[0].targets_rad) == {
         "base": 0.0,
         "shoulder": 0.0,
-        "elbow": 0.0,
+        "elbow": 0.065,
         "wrist": -1.571,
     }
     assert dict(config.actions["demo_reach"].steps[0].targets_rad) == {
         "base": 0.8,
         "shoulder": -0.6,
         "elbow": -0.9,
-        "wrist": 0.4,
+        "wrist": 0.15,
     }
 
 
@@ -158,7 +168,7 @@ def test_configured_development_action_values() -> None:
         0.8,
         0.0,
     ]
-    assert actions["wrist_up"].steps[0].targets_rad["wrist"] == 0.6
+    assert actions["wrist_up"].steps[0].targets_rad["wrist"] == 0.15
     assert actions["wrist_down"].steps[0].targets_rad["wrist"] == -0.6
     assert len(actions["reach_and_return"].steps) == 3
 
@@ -182,6 +192,30 @@ def test_emotional_action_targets_stay_within_simulation_limits() -> None:
         for step in actions[name].steps:
             for joint, angle in step.targets_rad.items():
                 assert arm_config.sim_limits[joint].contains(angle), (name, joint, angle)
+
+
+def test_all_action_targets_stay_within_physical_calibration() -> None:
+    actions = load_action_config().actions
+    calibrations = load_physical_config().calibrations
+
+    for name, action in actions.items():
+        for step in action.steps:
+            for joint, angle in step.targets_rad.items():
+                assert calibrations[joint].contains_rad(angle), (name, joint, angle)
+
+
+def test_example_targets_stay_within_physical_calibration() -> None:
+    calibrations = load_physical_config().calibrations
+    targets = [
+        VISIBLE_OFFSET_POSE_RAD,
+        {"base": BASE_TARGET_RAD},
+        REACH_TARGETS_RAD,
+        {"wrist": WRIST_TARGET_RAD},
+    ]
+
+    for target in targets:
+        for joint, angle in target.items():
+            assert calibrations[joint].contains_rad(angle), (joint, angle)
 
 
 def test_emotional_actions_have_distinct_timing_signatures() -> None:
@@ -254,6 +288,7 @@ def test_action_runner_forwards_targets_and_durations_in_order() -> None:
     ]
     assert arm.positions["base"] == 0.0
     assert arm.positions["wrist"] == 0.0
+    assert arm.validations == [call[0] for call in arm.calls]
 
 
 def test_action_runner_rejects_unknown_name_before_motion() -> None:
@@ -263,6 +298,26 @@ def test_action_runner_rejects_unknown_name_before_motion() -> None:
     with pytest.raises(UnknownActionError, match="Unknown action"):
         runner.run("missing")
     assert arm.calls == []
+
+
+def test_action_runner_prechecks_every_step_before_motion() -> None:
+    class RejectingArm(FakeArm):
+        def validate_targets(self, targets_rad: Mapping[str, float]) -> None:
+            super().validate_targets(targets_rad)
+            if targets_rad.get("base") == 0.8:
+                raise ValueError("unsafe final target")
+
+    arm = RejectingArm()
+    runner = ActionRunner(arm, load_action_config())
+
+    with pytest.raises(ValueError, match="unsafe final target"):
+        runner.run("base_scan")
+    assert arm.calls == []
+    assert arm.validations == [
+        {"base": 0.0},
+        {"base": -0.8},
+        {"base": 0.8},
+    ]
 
 
 def test_smoothstep_trajectory_has_expected_steps_and_endpoint() -> None:
@@ -295,11 +350,11 @@ def test_pybullet_move_without_duration_remains_non_blocking() -> None:
 def test_pybullet_timed_move_steps_and_preserves_unspecified_joints() -> None:
     arm, pb = make_fake_pybullet_arm()
 
-    arm.move_joint("wrist", 0.6, duration_s=0.025)
+    arm.move_joint("wrist", 0.15, duration_s=0.025)
 
     assert pb.step_calls == 6
     assert len(pb.control_calls) == 6
-    assert pb.control_calls[-1]["targetPosition"] == pytest.approx(0.6)
+    assert pb.control_calls[-1]["targetPosition"] == pytest.approx(0.15)
     assert {call["jointIndex"] for call in pb.control_calls} == {3}
     assert pb.states[0] == 0.0
     assert pb.states[1] == 0.0
@@ -314,8 +369,3 @@ def test_pybullet_rejects_invalid_duration_before_command(duration) -> None:
         arm.move_joint("base", 0.5, duration_s=duration)
     assert pb.control_calls == []
     assert pb.step_calls == 0
-
-
-def test_raspberry_pi_radians_backend_remains_unavailable() -> None:
-    with pytest.raises(NotImplementedError, match="no measured PWM-to-angle"):
-        RaspberryPiArm()

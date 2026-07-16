@@ -7,7 +7,7 @@
 
   Mesh frames, joint transforms, masses, and inertia tensors were exported
   from SolidWorks with SW2URDF on 2026-07-16. The SW2URDF zero-width limits
-  were intentionally replaced with development-only simulation limits from
+  were intentionally replaced with calibrated command limits from
   config/joints.yaml. The camera frame uses the recorded optical-center
   transform from config/geometry.yaml; its intrinsics remain provisional.
   Load with useFixedBase=True.
@@ -135,7 +135,7 @@
     <child link="upper_arm_link"/>
     <origin xyz="0.04225 0 0" rpy="0 0 1.0414"/>
     <axis xyz="0 0 1"/>
-    <limit lower="-1.571" upper="0.05" effort="5" velocity="3"/>
+    <limit lower="-1.53" upper="0" effort="5" velocity="3"/>
   </joint>
 
   <joint name="elbow_joint" type="revolute">
@@ -151,7 +151,7 @@
     <child link="wrist_link"/>
     <origin xyz="0 -0.1 0" rpy="0 0.074136 2.2399"/>
     <axis xyz="0.074068 0 -0.99725"/>
-    <limit lower="-2.071" upper="1.0708" effort="5" velocity="3"/>
+    <limit lower="-2.9824" upper="0.1576" effort="5" velocity="3"/>
   </joint>
 
   <link name="camera_link">

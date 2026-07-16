@@ -15,6 +15,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 URDF_PATH = REPO_ROOT / "models" / "butter_finger_simple.urdf"
 GEOMETRY_PATH = REPO_ROOT / "config" / "geometry.yaml"
+JOINTS_PATH = REPO_ROOT / "config" / "joints.yaml"
 
 EXPECTED_REVOLUTE_JOINTS = ["base_joint", "shoulder_joint", "elbow_joint", "wrist_joint"]
 
@@ -30,6 +31,11 @@ def robot() -> ET.Element:
 @pytest.fixture(scope="module")
 def geometry() -> dict:
     return yaml.safe_load(GEOMETRY_PATH.read_text(encoding="utf-8"))
+
+
+@pytest.fixture(scope="module")
+def joints_config() -> dict:
+    return yaml.safe_load(JOINTS_PATH.read_text(encoding="utf-8"))
 
 
 def test_root_is_robot(robot: ET.Element) -> None:
@@ -104,6 +110,22 @@ def test_revolute_joints_have_valid_limits(robot: ET.Element) -> None:
         assert lower < upper
         assert float(limit.get("effort")) > 0
         assert float(limit.get("velocity")) > 0
+
+
+def test_urdf_limits_match_shared_radian_config(
+    robot: ET.Element, joints_config: dict
+) -> None:
+    expected_limits = joints_config["simulation"]["limits_rad"]
+
+    for joint_name in EXPECTED_REVOLUTE_JOINTS:
+        logical_name = joint_name.removesuffix("_joint")
+        limit = robot.find(f"./joint[@name='{joint_name}']/limit")
+        assert float(limit.get("lower")) == pytest.approx(
+            expected_limits[logical_name]["lower"]
+        )
+        assert float(limit.get("upper")) == pytest.approx(
+            expected_limits[logical_name]["upper"]
+        )
 
 
 def test_joint_transforms_match_cad_geometry(robot: ET.Element, geometry: dict) -> None:

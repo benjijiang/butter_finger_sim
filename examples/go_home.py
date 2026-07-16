@@ -15,6 +15,13 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from butter_finger import BackendUnavailableError, PyBulletArm
 
+VISIBLE_OFFSET_POSE_RAD = {
+    "base": 0.9,
+    "shoulder": -0.7,
+    "elbow": -0.8,
+    "wrist": 0.15,
+}
+
 
 def main() -> int:
     try:
@@ -25,7 +32,7 @@ def main() -> int:
 
     with arm:
         # Start from an offset pose so the homing motion is visible.
-        arm.reset_joints({"base": 0.9, "shoulder": 0.7, "elbow": -0.8, "wrist": 0.5})
+        arm.reset_joints(VISIBLE_OFFSET_POSE_RAD)
         print("Moving to configured sim_home...")
         arm.go_home()
         positions = arm.get_joint_positions()

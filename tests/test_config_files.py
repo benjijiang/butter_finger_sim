@@ -10,9 +10,11 @@ import yaml
 
 from butter_finger.config import (
     JOINT_NAMES,
+    JointCalibration,
     JointLimits,
     load_arm_config,
     load_camera_config,
+    load_physical_config,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -67,6 +69,27 @@ def test_verified_pwm_limits(joints_cfg: dict) -> None:
         )
 
 
+def test_measured_joint_calibration(joints_cfg: dict) -> None:
+    assert joints_cfg["physical"]["calibration"] == {
+        "base": {
+            "lower": {"rad": -1.5708, "pwm_us": 510},
+            "upper": {"rad": 1.5708, "pwm_us": 2490},
+        },
+        "shoulder": {
+            "lower": {"rad": -1.53, "pwm_us": 1200},
+            "upper": {"rad": 0.0, "pwm_us": 2200},
+        },
+        "elbow": {
+            "lower": {"rad": -3.075, "pwm_us": 510},
+            "upper": {"rad": 0.065, "pwm_us": 2490},
+        },
+        "wrist": {
+            "lower": {"rad": -2.9824, "pwm_us": 510},
+            "upper": {"rad": 0.1576, "pwm_us": 2490},
+        },
+    }
+
+
 def test_home_pwm_within_tested_limits(joints_cfg: dict) -> None:
     home = joints_cfg["physical"]["home_pwm_us"]
     limits = joints_cfg["physical"]["tested_pwm_limits_us"]
@@ -88,9 +111,9 @@ def test_simulation_limits(joints_cfg: dict) -> None:
     assert set(limits) == set(JOINT_NAMES)
     assert limits == {
         "base": {"lower": -1.5708, "upper": 1.5708},
-        "shoulder": {"lower": -1.571, "upper": 0.050},
+        "shoulder": {"lower": -1.53, "upper": 0.0},
         "elbow": {"lower": -3.075, "upper": 0.065},
-        "wrist": {"lower": -2.071, "upper": 1.0708},
+        "wrist": {"lower": -2.9824, "upper": 0.1576},
     }
 
 
@@ -117,17 +140,64 @@ def test_sim_home_pose(poses_cfg: dict) -> None:
     assert home == {
         "base": 0.0,
         "shoulder": 0.0,
-        "elbow": 0.0,
+        "elbow": 0.065,
         "wrist": -1.571,
     }
 
 
-def test_wrist_range_extends_below_home_by_point_five_rad(
-    joints_cfg: dict, poses_cfg: dict
+def test_calibration_conversion_and_home_alignment(poses_cfg: dict) -> None:
+    physical = load_physical_config()
+    expected_home = physical.home_pwm_us
+    sim_home = poses_cfg["poses"]["sim_home"]
+
+    for joint in JOINT_NAMES:
+        calibration = physical.calibrations[joint]
+        assert calibration.pwm_to_rad(calibration.lower_pwm_us) == pytest.approx(
+            calibration.lower_rad
+        )
+        assert calibration.pwm_to_rad(calibration.upper_pwm_us) == pytest.approx(
+            calibration.upper_rad
+        )
+        assert round(calibration.rad_to_pwm(sim_home[joint])) == expected_home[joint]
+
+
+def test_joint_calibration_rejects_extrapolation() -> None:
+    calibration = JointCalibration(-1.0, 1.0, 500.0, 2500.0)
+
+    assert calibration.rad_to_pwm(0.0) == pytest.approx(1500.0)
+    assert calibration.pwm_to_rad(1500.0) == pytest.approx(0.0)
+    with pytest.raises(ValueError, match="outside the calibrated range"):
+        calibration.rad_to_pwm(1.01)
+    with pytest.raises(ValueError, match="outside the calibrated range"):
+        calibration.pwm_to_rad(499.0)
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    [
+        (("base", "lower", "rad"), float("nan"), "finite"),
+        (("base", "upper", "rad"), -2.0, "lower_rad < upper_rad"),
+        (("base", "upper", "pwm_us"), 510, "must be different"),
+        (("shoulder", "lower", "pwm_us"), 1199, "outside the tested range"),
+    ],
+)
+def test_rejects_invalid_joint_calibration(
+    tmp_path: Path,
+    joints_cfg: dict,
+    path: tuple[str, str, str],
+    value: float,
+    message: str,
 ) -> None:
-    lower = joints_cfg["simulation"]["limits_rad"]["wrist"]["lower"]
-    home = poses_cfg["poses"]["sim_home"]["wrist"]
-    assert home - lower == pytest.approx(0.5)
+    invalid = copy.deepcopy(joints_cfg)
+    joint, endpoint, field = path
+    invalid["physical"]["calibration"][joint][endpoint][field] = value
+    (tmp_path / "joints.yaml").write_text(
+        yaml.safe_dump(invalid),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=message):
+        load_physical_config(tmp_path)
 
 
 def test_cad_link_properties_are_positive(geometry_cfg: dict) -> None:

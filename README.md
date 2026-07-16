@@ -6,10 +6,10 @@ arm. The physical arm is driven by a Raspberry Pi 5 through a Hiwonder
 RasAdapter5A V1.0 servo controller over UART.
 
 > **This is not yet a validated physical digital twin.** Its geometry and
-> inertial properties now come from a SolidWorks SW2URDF export, but joint
-> ranges, servo dynamics, camera intrinsics, and PWM-to-angle calibration
-> remain unverified. Its purpose is to support development without the
-> physical arm.
+> inertial properties come from a SolidWorks SW2URDF export and each joint
+> has a measured two-point radians/PWM mapping. The arm remains open-loop;
+> servo dynamics, load behavior, CAD alignment, and camera intrinsics are
+> not independently validated.
 
 ## What it currently simulates
 
@@ -37,10 +37,11 @@ can be added later without changing joint names or application code.
 |---|---|
 | Servo models: base/elbow/wrist = SG90, shoulder = LD-1501MG | Servo datasheet PWM/angle specs (deliberately not recorded) |
 | SolidWorks link meshes, joint transforms, masses, and inertia tensors | Independent physical validation of CAD mass properties and transforms |
-| Recorded home PWM: base 1500, shoulder 2200, elbow 2490, wrist 1400 µs | Physical joint angular ranges (configured simulator-only limits are not physical calibration) |
+| Recorded home PWM: base 1500, shoulder 2200, elbow 2490, wrist 1400 µs | Closed-loop joint-angle feedback |
 | Tested pulse ranges: base/elbow/wrist 505–2495 µs, shoulder 1200–2220 µs | Servo force, speed, backlash, compliance |
+| Two-point radians/PWM calibration for all four joints | Calibration linearity between measured endpoints and behavior under load |
 | Recorded camera optical center `[0.011, 0.044, 0.013]` m from `wrist_link`; optical axis +Y, native image top -X | Exact camera FOV, intrinsic matrix, and lens distortion |
-| Pi → UART → RasAdapter5A → servo PWM signal chain | PWM-to-angle calibration (none exists yet) |
+| Pi → UART → RasAdapter5A → servo PWM signal chain | Whether SDK readback reflects shaft angle rather than command state |
 | Drawing dimensions: base 32.53 mm; shoulder axis height 73.90 mm; shoulder–elbow 145.2 mm; elbow–wrist 100 mm; wrist–tip 49 mm | Independent CAD/physical verification of those drawing dimensions |
 
 ## Repository layout
@@ -49,9 +50,9 @@ can be added later without changing joint names or application code.
 butter-finger-sim/
 ├── config/
 │   ├── geometry.yaml        # CAD mesh, joint-transform, and inertial source of truth
-│   ├── joints.yaml          # PWM ports, recorded PWM data, simulation limits
-│   ├── poses.yaml           # named simulation poses in radians
-│   ├── actions.yaml         # named simulation action sequences in radians
+│   ├── joints.yaml          # PWM limits, two-point calibration, shared radian limits
+│   ├── poses.yaml           # named poses in calibrated radians
+│   ├── actions.yaml         # named action sequences in calibrated radians
 │   ├── idle.yaml            # simulation-only no-person scan behavior
 │   └── camera.yaml          # camera stream metadata and simulation projection
 ├── models/
@@ -68,15 +69,15 @@ butter-finger-sim/
 │   └── backends/
 │       ├── pybullet_arm.py      # simulation backend (runs on the sim machine)
 │       ├── pwm_robot_arm.py     # REAL hardware, PWM microseconds (Raspberry Pi)
-│       └── raspberry_pi_arm.py  # radians hardware stub — awaits calibration
+│       └── raspberry_pi_arm.py  # REAL calibrated radians adapter
 ├── examples/
 │   ├── view_robot.py        # display the arm in the PyBullet GUI
 │   ├── joint_sliders.py     # one GUI slider per joint
 │   ├── go_home.py           # move to the simulated reference pose
 │   ├── scripted_motion.py   # smoothstep motion sequence
-│   ├── run_action.py        # list/run configured simulation actions
+│   ├── run_action.py        # list/run actions with sim or real backend
 │   ├── idle_motion.py       # continuous slow no-person scan
-│   ├── emotion_showcase.py  # play selected/all emotional actions
+│   ├── emotion_showcase.py  # play emotions with sim or real backend
 │   ├── camera_snapshot.py   # render one simulated RGB frame
 │   ├── pi_test_pose.py      # REAL HARDWARE: joint-by-joint home-pose test
 │   └── pi_sweep_base.py     # REAL HARDWARE: base sweep around home
@@ -87,7 +88,7 @@ butter-finger-sim/
 
 ## Shared backend architecture
 
-Simulation-facing application code commands the arm **only in radians**
+Application code commands the arm **only in radians**
 through the `ArmBackend` interface. Calls may omit `duration_s` for
 non-blocking target updates (such as sliders), or provide it for a blocking
 timed move. Backends translate radians and duration into whatever their
@@ -99,7 +100,7 @@ Application command in radians          Pi-only scripts (PWM microseconds)
        ArmBackend API                           PWMRobotArm
         /          \                                 |
 PyBulletArm     RaspberryPiArm            ros_robot_controller_sdk (board_demo)
-joint target    future calibrated PWM                |
+joint target      calibrated PWM                     |
                                           UART -> RasAdapter5A -> servos
 ```
 
@@ -110,20 +111,33 @@ with PyBulletArm(gui=True) as arm:
     arm.go_home()
     arm.move_joint("base", 0.5)          # non-blocking target, radians
     arm.move_joints(
-        {"shoulder": 0.4, "elbow": -0.6},
+        {"shoulder": -0.4, "elbow": -0.6},
         duration_s=2.0,                  # blocking smoothstep move
     )
     print(arm.get_joint_positions())
 ```
 
-`RaspberryPiArm` (radians) is a stub that raises `NotImplementedError`. It
-will only be implemented after measured PWM-to-angle calibration and verified
-safe limits exist for every joint — commands without verified limits will be
-rejected, never clamped to guesses.
+On the Pi, the same API wraps the PWM layer:
 
-## Named simulation actions
+```python
+from butter_finger import RaspberryPiArm
 
-`config/actions.yaml` defines development-only actions as timed steps. A step
+with RaspberryPiArm() as arm:
+    arm.go_home()  # exact recorded home PWM; waits for completion
+    arm.move_joints(
+        {"base": 0.3, "shoulder": -0.5},
+        duration_s=2.0,
+    )
+```
+
+`RaspberryPiArm` interpolates only inside each measured two-point range.
+Unknown joints, non-finite values, and out-of-range radians are rejected
+before any PWM command. Its `get_joint_positions()` value is only the last
+complete command estimate; it is not physical angle feedback.
+
+## Named actions
+
+`config/actions.yaml` defines calibrated-radian actions as timed steps. A step
 either references a full pose from `config/poses.yaml` or gives absolute
 targets for selected joints. List and run them with:
 
@@ -131,8 +145,10 @@ targets for selected joints. List and run them with:
 python examples/run_action.py --list
 python examples/run_action.py base_scan
 python examples/run_action.py happy
+python examples/run_action.py happy --backend real --confirm-hardware
 python examples/emotion_showcase.py happy curious sad surprised
 python examples/emotion_showcase.py --all
+python examples/emotion_showcase.py happy curious --backend real --confirm-hardware
 ```
 
 The original utility actions remain: `home`, `demo_reach`, `base_scan`,
@@ -150,11 +166,12 @@ The emotional actions begin and end at `idle_ready`, not `sim_home`.
 fear, excitement, or force; slow motion conveys affection, thought, sadness,
 or fatigue. Repeated identical targets create expressive holds while still
 advancing simulation. These timings are simulator choreography, not measured
-servo performance.
+servo performance; test speed and load behavior cautiously on hardware.
 
 `ActionRunner` schedules each finite action through `ArmBackend`.
-`emotion_showcase.py` keeps one GUI open while playing either a supplied list
-or all twenty actions, with a short idle interval between them.
+`emotion_showcase.py` plays either a supplied list or all twenty actions. In
+simulation it runs a slow idle scan between actions. On real hardware it only
+waits between gestures and does not stream `IdleController` targets.
 
 ## Simulation idle behavior
 
@@ -170,8 +187,9 @@ calling `IdleController.update()` while a person is detected, command tracking
 targets from camera perception, then call `resume()` when the person is lost.
 Perception remains outside `ArmBackend`.
 
-All action and idle values are temporary simulation data. They are not
-hardware-approved commands and cannot be sent to `PWMRobotArm`.
+Named actions are inside the measured calibration domain and may be sent
+through `RaspberryPiArm`. The continuous `IdleController` scan remains
+simulation-only because its high-frequency real-hardware behavior is untested.
 
 ## Simulated RGB camera
 
@@ -199,23 +217,33 @@ pinhole projection and does not reproduce the physical camera's strong
 wide-angle/fisheye distortion. Replace the projection parameters only after
 checkerboard calibration provides measured intrinsics and distortion.
 
-## Real hardware: the PWM layer (Raspberry Pi only)
+## Real hardware (Raspberry Pi only)
 
-Until the PWM-to-angle calibration exists, the real arm is driven directly
-in PWM pulse widths (microseconds) through `PWMRobotArm`, the verified port
-of the original `board_demo/butter_finger.py` control code. Ports, tested
-pulse limits, and the recorded home pose come from the `physical` section of
-`config/joints.yaml`; out-of-range pulses raise `JointLimitError` and are
-never clamped.
+Use `RaspberryPiArm` for normal application code in radians. It wraps
+`PWMRobotArm`, the verified port of the original
+`board_demo/butter_finger.py` control code. The `physical` section of
+`config/joints.yaml` is the source of truth for ports, tested pulse limits,
+home PWM, and these measured endpoint mappings:
+
+- base: `-1.5708 rad → 510 µs`, `1.5708 rad → 2490 µs`
+- shoulder: `-1.530 rad → 1200 µs`, `0 rad → 2200 µs`
+- elbow: `-3.075 rad → 510 µs`, `0.065 rad → 2490 µs`
+- wrist: `-2.9824 rad → 510 µs`, `0.1576 rad → 2490 µs`
+
+The duplicated URDF/simulation limits must match these radian endpoints;
+configuration loading fails if they diverge. Conversion is interpolation
+only—there is no clamping or extrapolation.
 
 ```python
-from butter_finger import PWMRobotArm
+from butter_finger import RaspberryPiArm
 
-arm = PWMRobotArm()                      # opens the serial Board via the SDK
-arm.move_joint("base", 1500, duration=1.0)   # PWM microseconds
-arm.move_joints({"shoulder": 2200, "wrist": 1400}, duration=2.0)
-arm.home()                               # recorded physical home pose
+with RaspberryPiArm() as arm:
+    arm.go_home()
+    arm.move_joint("base", 0.4, duration_s=1.0)
 ```
+
+`PWMRobotArm` remains available for low-level diagnostics that intentionally
+work in PWM microseconds.
 
 The Hiwonder SDK (`ros_robot_controller_sdk.py`, serial `/dev/ttyAMA0` at
 1,000,000 baud) is **not vendored** in this repository. `PWMRobotArm`
@@ -225,12 +253,12 @@ checkout — on the Pi the repo lives inside `board_demo/`, right next to the
 SDK file, so it is found automatically. On the simulation machine
 (Linux/Mac) the SDK is absent and everything else still works.
 
-Timed `ArmBackend` calls now carry an optional `duration_s`. `PyBulletArm`
+Timed `ArmBackend` calls carry an optional `duration_s`. `PyBulletArm`
 implements it by generating smoothstep targets at the configured control
 rate. `PWMRobotArm` already passes its required `duration` to the controller,
-which performs its own interpolation. After measured calibration exists,
-`RaspberryPiArm` will convert each radians target to PWM and forward the same
-duration; it remains deliberately unimplemented today.
+which performs its own interpolation. `RaspberryPiArm` forwards the duration
+and waits before returning so sequential action keyframes cannot overwrite
+one another.
 
 ## Getting started
 
@@ -255,14 +283,15 @@ python examples/camera_snapshot.py
 The real arm uses inexpensive hobby servos driven open-loop by PWM pulse
 width. The simulation cannot faithfully reproduce them because:
 
-- **No verified feedback exists on the real arm.** The SDK does expose
+- **No verified angle feedback exists on the real arm.** The SDK does expose
   `pwm_servo_read_position()` / `pwm_servo_read_offset()`, but the servos
   themselves are open-loop, so the board most likely reports the last
   commanded value rather than the true shaft angle (unverified). Until this
-  is tested, treat the simulator's `get_joint_positions()` as having no
-  trustworthy physical counterpart.
-- **PWM-to-angle mapping is unknown and nonlinear-ish.** Until it is measured
-  per joint, simulated radians and real pulse widths are unrelated scales.
+  is tested, `RaspberryPiArm.get_joint_positions()` reports only the last
+  complete command estimate.
+- **Calibration is only a two-point linear model.** Its endpoints are
+  measured, but intermediate linearity, repeatability, and loaded behavior
+  have not been independently characterized.
 - **Torque, speed, deadband, and backlash are guesses.** The simulator uses
   a placeholder force/velocity cap; real servos stall, buzz, overshoot, and
   sag under load.
@@ -281,8 +310,10 @@ real dynamic behavior.
    the SolidWorks SW2URDF export on 2026-07-16.
 3. Verify the CAD joint frames, recorded camera transform, and mass properties
    against the physical arm; create simplified collision meshes.
-4. Measure PWM-to-angle calibration per joint on the physical arm.
-5. Implement `RaspberryPiArm` (radians) on top of the PWM layer with
-   verified calibration only.
+4. ~~Measure two-point PWM-to-angle calibration per joint~~ — recorded in
+   `config/joints.yaml`; intermediate linearity still needs characterization.
+5. ~~Implement `RaspberryPiArm` (radians) on top of the PWM layer~~ —
+   calibrated interpolation, atomic validation, exact home, and CLI switching
+   are implemented.
 6. ~~Add camera rendering from `camera_link`~~ — RGB capture implemented with
    provisional pinhole intrinsics; physical camera calibration remains.

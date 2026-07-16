@@ -1,28 +1,23 @@
-# Butter Finger — named simulation poses
+# Butter Finger — named arm poses
 #
-# All values are SIMULATION joint positions in RADIANS.
-#
-# IMPORTANT: these poses are NOT derived from the recorded physical home PWM
-# values in config/joints.yaml. No measured PWM-to-angle calibration exists,
-# so no conversion is performed. Values use the simulation coordinates and
-# zero offsets configured in config/joints.yaml.
+# All values are joint positions in RADIANS within the shared calibrated
+# command domain in config/joints.yaml.
 
 poses:
-  # Simulated home pose. Wrist keeps the old coordinate's -1.571 rad absolute
-  # position; its activity range extends 0.5 rad farther in the negative direction.
+  # Shared home pose. Its calibrated PWM values round to the recorded physical
+  # home signals: base=1500, shoulder=2200, elbow=2490, wrist=1400 us.
   sim_home:
     base: 0.0
     shoulder: 0.0
-    elbow: 0.0
+    elbow: 0.065
     wrist: -1.571
 
-  # Arbitrary demo pose used by examples/scripted_motion.py.
-  # Values are within the configured simulation limits.
+  # Demonstration pose within the calibrated physical command domain.
   demo_reach:
     base: 0.8
     shoulder: -0.6
     elbow: -0.9
-    wrist: 0.4
+    wrist: 0.15
 
   # Neutral hand-off posture for conversational behavior. Emotional actions
   # begin and end here; the dynamic idle controller then resumes its slow base
@@ -33,8 +28,8 @@ poses:
     elbow: -0.5
     wrist: -1.0
 
-  # Reusable full-body keyframes for simulation-only emotional motion.
-  # Their names describe expressive intent, not physically validated poses.
+  # Reusable full-body keyframes for emotional motion. Their names describe
+  # expressive intent; speed and load behavior still require hardware testing.
   emotion_upright:
     base: 0.0
     shoulder: -0.55

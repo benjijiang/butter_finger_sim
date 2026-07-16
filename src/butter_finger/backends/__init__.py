@@ -1,3 +1,4 @@
-"""Arm backends: PyBullet simulation, the PWM hardware layer for the
-Raspberry Pi (microseconds), and the radians hardware stub awaiting
-PWM-to-angle calibration."""
+"""PyBullet simulation and calibrated Raspberry Pi arm backends.
+
+The low-level PWMRobotArm remains available for microsecond diagnostics.
+"""

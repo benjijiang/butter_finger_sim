@@ -21,6 +21,9 @@ class FakeArm(ArmBackend):
         self.calls: list[tuple[dict[str, float], float | None]] = []
         self.positions = {joint: 0.0 for joint in load_arm_config().joint_order}
 
+    def validate_targets(self, targets_rad: Mapping[str, float]) -> None:
+        pass
+
     def move_joint(
         self,
         joint: str,

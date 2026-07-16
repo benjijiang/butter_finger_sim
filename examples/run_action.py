@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""List or run a configured named action in the PyBullet GUI.
+"""List or run a configured named action in simulation or on the real arm.
 
-Run on the simulation machine (Linux/Mac), inside the project's .venv:
+Examples:
 
     python examples/run_action.py --list
     python examples/run_action.py base_scan
-
-The bundled actions use temporary simulation radians and are not approved for
-the physical PWM-controlled arm.
+    python examples/run_action.py happy --backend real --confirm-hardware
 """
 from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -20,8 +19,10 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from butter_finger import (
     ActionRunner,
+    ArmBackend,
     BackendUnavailableError,
     PyBulletArm,
+    RaspberryPiArm,
     load_action_config,
 )
 
@@ -33,18 +34,39 @@ def _build_parser() -> argparse.ArgumentParser:
         "--list",
         action="store_true",
         dest="list_actions",
-        help="list configured actions without opening PyBullet",
+        help="list configured actions without opening a backend",
+    )
+    parser.add_argument(
+        "--backend",
+        choices=("sim", "real"),
+        default="sim",
+        help="arm backend to use (default: sim)",
+    )
+    parser.add_argument(
+        "--confirm-hardware",
+        action="store_true",
+        help="required acknowledgement before opening the real arm",
     )
     return parser
 
 
-def main() -> int:
+def _create_arm(backend: str) -> ArmBackend:
+    if backend == "sim":
+        return PyBulletArm(gui=True)
+    return RaspberryPiArm()
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    arm_factory: Callable[[str], ArmBackend] | None = None,
+) -> int:
     parser = _build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     config = load_action_config()
 
     if args.list_actions:
-        print("Configured simulation actions (radians; not approved for PWM):")
+        print("Configured arm actions (calibrated radians):")
         for name, action in config.actions.items():
             print(f"  {name:<18} {action.description}")
         return 0
@@ -56,18 +78,25 @@ def main() -> int:
             f"unknown action {args.action!r}; choose from "
             f"{', '.join(config.action_names)}"
         )
+    if args.backend == "real" and not args.confirm_hardware:
+        parser.error("real backend requires --confirm-hardware")
 
+    factory = arm_factory if arm_factory is not None else _create_arm
     try:
-        arm = PyBulletArm(gui=True)
+        arm = factory(args.backend)
     except (BackendUnavailableError, FileNotFoundError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
     with arm:
+        if args.backend == "real":
+            print("Moving real arm to its exact physical home PWM...")
+            arm.go_home()
         action = config.actions[args.action]
-        print(f"Running {action.name}: {action.description}")
+        print(f"Running {action.name} on {args.backend}: {action.description}")
         ActionRunner(arm, config).run(action.name)
-        arm.run_for(1.0)
+        if args.backend == "sim":
+            arm.run_for(1.0)
     print("Done.")
     return 0
 

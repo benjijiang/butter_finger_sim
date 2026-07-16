@@ -6,11 +6,11 @@ in raw PWM pulse widths (MICROSECONDS) through the Hiwonder SDK:
 
     Raspberry Pi 5 --UART (/dev/ttyAMA0 @ 1000000)--> RasAdapter5A --PWM--> servos
 
-It is deliberately NOT an ArmBackend: the ArmBackend interface is radians
-only, and no measured PWM-to-angle calibration exists yet. Until it does,
-real-hardware control happens at this PWM layer, with limits taken from the
-tested values in config/joints.yaml (``physical`` section). Out-of-range
-pulses are rejected, never clamped.
+It is deliberately NOT an ArmBackend: the ArmBackend interface is radians.
+RaspberryPiArm wraps this low-level class with the measured linear
+calibration. Direct PWM control remains available for hardware diagnostics.
+Limits come from config/joints.yaml and out-of-range pulses are rejected,
+never clamped.
 
 SDK resolution (lazy, at instantiation only, so the rest of the package
 works on machines without the SDK or a serial port):
@@ -156,3 +156,13 @@ class PWMRobotArm:
 
     def wait(self, seconds: float) -> None:
         time.sleep(seconds)
+
+    def disconnect(self) -> None:
+        """Close the SDK serial port when one is present; safe repeatedly."""
+        disable_reception = getattr(self.board, "enable_reception", None)
+        if callable(disable_reception):
+            disable_reception(False)
+        port = getattr(self.board, "port", None)
+        close = getattr(port, "close", None)
+        if callable(close) and getattr(port, "is_open", True):
+            close()

@@ -2,8 +2,9 @@
 #
 # The mesh frames, joint transforms, masses, centers of mass, and inertia
 # tensors below were exported with SW2URDF on 2026-07-16. Values use SI units.
-# Joint limits and motor-control parameters remain simulation-only values in
-# config/joints.yaml. Regenerate the URDF after editing:
+# Joint limits use the shared calibrated radians in config/joints.yaml;
+# motor-control parameters remain simulation-only. Regenerate the URDF after
+# editing:
 #
 #     python scripts/generate_urdf.py
 #

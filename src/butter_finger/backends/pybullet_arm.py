@@ -241,6 +241,11 @@ class PyBulletArm(ArmBackend):
     # ArmBackend interface
     # ------------------------------------------------------------------
 
+    def validate_targets(self, targets_rad: Mapping[str, float]) -> None:
+        """Validate all targets without changing simulator state."""
+        for joint, position in targets_rad.items():
+            self._validate(joint, position)
+
     def _set_joint_target(self, joint: str, position_rad: float) -> None:
         """Send one already-validated target without advancing simulation."""
         self._pb.setJointMotorControl2(
@@ -289,8 +294,7 @@ class PyBulletArm(ArmBackend):
         duration it blocks while advancing deterministic fixed simulation
         steps; GUI clients are paced to wall-clock time.
         """
-        for joint, position in targets_rad.items():
-            self._validate(joint, position)
+        self.validate_targets(targets_rad)
         self._validate_duration(duration_s)
 
         if duration_s is None:

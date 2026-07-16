@@ -8,7 +8,7 @@ ArmBackend. High-level code must never send PWM directly.
            ArmBackend API
             /          \\
     PyBulletArm     RaspberryPiArm
-    joint target    future calibrated PWM
+    joint target     calibrated PWM
 """
 from __future__ import annotations
 
@@ -28,8 +28,17 @@ class BackendUnavailableError(RuntimeError):
     """The backend's runtime dependency (e.g. PyBullet) is not available."""
 
 
+class JointStateUnavailableError(RuntimeError):
+    """A backend cannot provide a complete joint-state estimate."""
+
+
 class ArmBackend(ABC):
     """Abstract four-joint arm. All positions are radians."""
+
+    @abstractmethod
+    def validate_targets(self, targets_rad: Mapping[str, float]) -> None:
+        """Validate a target set without commanding or advancing the arm."""
+        raise NotImplementedError
 
     @abstractmethod
     def move_joint(
@@ -64,7 +73,7 @@ class ArmBackend(ABC):
 
     @abstractmethod
     def go_home(self) -> None:
-        """Move to the configured simulated reference pose."""
+        """Move to the backend's configured reference pose."""
         raise NotImplementedError
 
     @abstractmethod

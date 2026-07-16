@@ -3,11 +3,8 @@
 Simulation-facing application code talks to the arm only through the
 ArmBackend interface, always in radians. Backends translate radians into
 whatever their target needs: PyBullet joint targets in simulation, or (in
-the future, on the Raspberry Pi) calibrated PWM microseconds.
-
-Until a measured PWM-to-angle calibration exists, the real arm is driven
-directly at the PWM level through PWMRobotArm (microseconds, Raspberry Pi
-only), the verified port of the original board_demo control code.
+the Raspberry Pi) calibrated PWM microseconds. PWMRobotArm remains available
+as a low-level microseconds API for hardware diagnostics.
 
 Importing this package does NOT import PyBullet or any hardware library;
 backends load their dependencies lazily when instantiated.
@@ -19,6 +16,7 @@ from butter_finger.arm import (
     ArmBackend,
     BackendUnavailableError,
     JointLimitError,
+    JointStateUnavailableError,
     UnknownJointError,
 )
 from butter_finger.backends.pwm_robot_arm import PWMRobotArm
@@ -32,6 +30,7 @@ from butter_finger.config import (
     ArmConfig,
     CameraConfig,
     IdleConfig,
+    JointCalibration,
     PhysicalConfig,
     load_action_config,
     load_arm_config,
@@ -53,7 +52,9 @@ __all__ = [
     "IdleConfig",
     "IdleController",
     "JOINT_NAMES",
+    "JointCalibration",
     "JointLimitError",
+    "JointStateUnavailableError",
     "PWMRobotArm",
     "PhysicalConfig",
     "PyBulletArm",

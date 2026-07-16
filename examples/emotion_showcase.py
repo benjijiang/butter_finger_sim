@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""Play selected emotional actions in one PyBullet GUI session.
+"""Play selected emotional actions in simulation or on the real arm.
 
-Run on the simulation machine (Linux/Mac), inside the project's .venv:
+Examples:
 
     python examples/emotion_showcase.py --all
     python examples/emotion_showcase.py happy curious sad surprised
-
-All motion uses temporary simulation radians and is not approved for PWM.
+    python examples/emotion_showcase.py happy --backend real --confirm-hardware
 """
 from __future__ import annotations
 
 import argparse
 import math
 import sys
+import time
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -21,9 +22,11 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 from butter_finger import (
     ActionConfig,
     ActionRunner,
+    ArmBackend,
     BackendUnavailableError,
     IdleController,
     PyBulletArm,
+    RaspberryPiArm,
     load_action_config,
 )
 
@@ -68,7 +71,18 @@ def _build_parser() -> argparse.ArgumentParser:
         "--idle-seconds",
         type=float,
         default=1.5,
-        help="seconds of slow idle scanning between actions (default: 1.5)",
+        help="seconds between actions (sim scans; real waits; default: 1.5)",
+    )
+    parser.add_argument(
+        "--backend",
+        choices=("sim", "real"),
+        default="sim",
+        help="arm backend to use (default: sim)",
+    )
+    parser.add_argument(
+        "--confirm-hardware",
+        action="store_true",
+        help="required acknowledgement before opening the real arm",
     )
     return parser
 
@@ -107,9 +121,24 @@ def _run_idle_gap(
         arm.step(realtime=True)
 
 
-def main() -> int:
+def _create_arm(backend: str) -> ArmBackend:
+    if backend == "sim":
+        return PyBulletArm(gui=True)
+    return RaspberryPiArm()
+
+
+def _wait_real_gap(duration_s: float) -> None:
+    """Pause between real actions without streaming unverified idle targets."""
+    time.sleep(duration_s)
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    arm_factory: Callable[[str], ArmBackend] | None = None,
+) -> int:
     parser = _build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if (
         not math.isfinite(args.idle_seconds)
         or args.idle_seconds < 0
@@ -125,9 +154,12 @@ def main() -> int:
         )
     except ValueError as exc:
         parser.error(str(exc))
+    if args.backend == "real" and not args.confirm_hardware:
+        parser.error("real backend requires --confirm-hardware")
 
+    factory = arm_factory if arm_factory is not None else _create_arm
     try:
-        arm = PyBulletArm(gui=True)
+        arm = factory(args.backend)
     except (BackendUnavailableError, FileNotFoundError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
@@ -135,16 +167,30 @@ def main() -> int:
     completed = True
     with arm:
         runner = ActionRunner(arm, config)
-        idle = IdleController(arm)
+        idle = IdleController(arm) if args.backend == "sim" else None
+        if args.backend == "real":
+            print("Moving real arm to its exact physical home PWM...")
+            arm.go_home()
         try:
             for index, name in enumerate(names, start=1):
                 action = config.actions[name]
-                print(f"[{index}/{len(names)}] {name}: {action.description}")
+                print(
+                    f"[{index}/{len(names)}] {name} on {args.backend}: "
+                    f"{action.description}"
+                )
                 runner.run(name)
-                if args.idle_seconds > 0:
-                    _run_idle_gap(arm, idle, args.idle_seconds)
-        except (KeyboardInterrupt, arm.pb.error):
+                if args.idle_seconds > 0 and index < len(names):
+                    if args.backend == "sim":
+                        _run_idle_gap(arm, idle, args.idle_seconds)
+                    else:
+                        _wait_real_gap(args.idle_seconds)
+        except KeyboardInterrupt:
             completed = False
+        except Exception as exc:
+            if args.backend == "sim" and isinstance(exc, arm.pb.error):
+                completed = False
+            else:
+                raise
 
     print("Showcase complete." if completed else "Showcase stopped.")
     return 0

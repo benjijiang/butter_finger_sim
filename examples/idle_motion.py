@@ -5,8 +5,8 @@ Run on the simulation machine (Linux/Mac), inside the project's .venv:
 
     python examples/idle_motion.py
 
-The scan uses temporary simulation radians. It is not approved for the
-physical PWM-controlled arm. Close the GUI or press Ctrl+C to stop.
+The targets are calibrated radians, but this continuously streamed controller
+is intentionally simulation-only. Close the GUI or press Ctrl+C to stop.
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def main() -> int:
     with arm:
         idle = IdleController(arm)
         idle.resume()
-        print("Butter Finger idle scan (simulation radians; not approved for PWM)")
+        print("Butter Finger idle scan (simulation-only controller)")
         print(
             f"  {idle.config.scan_joint}: "
             f"{idle.config.lower_rad:+.2f} to {idle.config.upper_rad:+.2f} rad, "
