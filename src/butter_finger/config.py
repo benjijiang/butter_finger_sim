@@ -2,7 +2,8 @@
 
 Keeps the configuration concepts separate (see config/joints.yaml):
 simulation radians, recorded physical PWM microseconds, verified hardware
-limits, temporary simulation limits, named poses, and named actions.
+limits, temporary simulation limits, named poses, named actions, and
+simulation-only camera rendering.
 """
 from __future__ import annotations
 
@@ -33,6 +34,10 @@ class JointLimits:
 
     def contains(self, position_rad: float) -> bool:
         return self.lower_rad <= position_rad <= self.upper_rad
+
+    def clamp(self, position_rad: float) -> float:
+        """Restrict a simulator value to this inclusive range."""
+        return min(self.upper_rad, max(self.lower_rad, position_rad))
 
 
 @dataclass(frozen=True)
@@ -79,6 +84,37 @@ class ArmConfig:
 
 
 @dataclass(frozen=True)
+class CameraConfig:
+    """Validated simulation camera parameters and physical stream metadata."""
+
+    native_width: int
+    native_height: int
+    fps: int
+    hardware_pixel_format: str
+    link_name: str
+    forward_xyz: tuple[float, float, float]
+    up_xyz: tuple[float, float, float]
+    projection_model: str
+    vertical_fov_deg: float
+    near_plane_m: float
+    far_plane_m: float
+    intrinsics_calibrated: bool
+    output_pixel_format: str
+    rotate_clockwise_deg: int
+    output_width: int
+    output_height: int
+
+    @property
+    def native_aspect_ratio(self) -> float:
+        return self.native_width / self.native_height
+
+    @property
+    def output_shape(self) -> tuple[int, int, int]:
+        """NumPy HWC shape of a captured RGB frame."""
+        return (self.output_height, self.output_width, 3)
+
+
+@dataclass(frozen=True)
 class ActionStep:
     """One timed action step, expressed only in simulation radians."""
 
@@ -116,6 +152,27 @@ def _finite_float(value: Any, label: str) -> float:
     result = float(value)
     if not math.isfinite(result):
         raise ValueError(f"{label} must be finite")
+    return result
+
+
+def _positive_int(value: Any, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"{label} must be a positive integer")
+    return value
+
+
+def _nonempty_string(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{label} must be a non-empty string")
+    return value
+
+
+def _vector3(value: Any, label: str) -> tuple[float, float, float]:
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        raise ValueError(f"{label} must contain exactly three numbers")
+    result = tuple(_finite_float(component, label) for component in value)
+    if math.sqrt(sum(component**2 for component in result)) <= 0:
+        raise ValueError(f"{label} must be non-zero")
     return result
 
 
@@ -162,6 +219,99 @@ def load_arm_config(config_dir: Path = CONFIG_DIR) -> ArmConfig:
         max_force_nm=float(control["max_force_nm"]),
         max_velocity_rad_s=float(control["max_velocity_rad_s"]),
         control_rate_hz=float(control["control_rate_hz"]),
+    )
+
+
+def load_camera_config(config_dir: Path = CONFIG_DIR) -> CameraConfig:
+    """Load the simulation-only RGB camera configuration."""
+    camera_cfg = _load_yaml(config_dir / "camera.yaml")
+    if not isinstance(camera_cfg, dict):
+        raise ValueError("camera.yaml must contain a mapping")
+
+    try:
+        native = camera_cfg["native"]
+        optical = camera_cfg["optical_frame"]
+        projection = camera_cfg["projection"]
+        output = camera_cfg["output"]
+    except KeyError as exc:
+        raise ValueError(f"camera.yaml is missing section {exc.args[0]!r}") from exc
+    if not all(isinstance(section, dict) for section in (native, optical, projection, output)):
+        raise ValueError("camera.yaml sections must be mappings")
+
+    native_width = _positive_int(native.get("width"), "native.width")
+    native_height = _positive_int(native.get("height"), "native.height")
+    fps = _positive_int(native.get("fps"), "native.fps")
+    hardware_pixel_format = _nonempty_string(
+        native.get("pixel_format"), "native.pixel_format"
+    )
+
+    link_name = _nonempty_string(optical.get("link_name"), "optical_frame.link_name")
+    forward_xyz = _vector3(optical.get("forward_xyz"), "optical_frame.forward_xyz")
+    up_xyz = _vector3(optical.get("up_xyz"), "optical_frame.up_xyz")
+    forward_norm = math.sqrt(sum(component**2 for component in forward_xyz))
+    up_norm = math.sqrt(sum(component**2 for component in up_xyz))
+    cosine = sum(a * b for a, b in zip(forward_xyz, up_xyz)) / (
+        forward_norm * up_norm
+    )
+    if not math.isclose(cosine, 0.0, abs_tol=1e-6):
+        raise ValueError("optical_frame forward_xyz and up_xyz must be orthogonal")
+
+    projection_model = _nonempty_string(projection.get("model"), "projection.model")
+    if projection_model != "pinhole":
+        raise ValueError("projection.model must be 'pinhole'")
+    vertical_fov_deg = _finite_float(
+        projection.get("vertical_fov_deg"), "projection.vertical_fov_deg"
+    )
+    if not 0.0 < vertical_fov_deg < 180.0:
+        raise ValueError("projection.vertical_fov_deg must be between 0 and 180")
+    near_plane_m = _finite_float(
+        projection.get("near_plane_m"), "projection.near_plane_m"
+    )
+    far_plane_m = _finite_float(
+        projection.get("far_plane_m"), "projection.far_plane_m"
+    )
+    if near_plane_m <= 0 or far_plane_m <= near_plane_m:
+        raise ValueError(
+            "projection planes must satisfy 0 < near_plane_m < far_plane_m"
+        )
+    intrinsics_calibrated = projection.get("calibrated")
+    if not isinstance(intrinsics_calibrated, bool):
+        raise ValueError("projection.calibrated must be a boolean")
+
+    output_pixel_format = _nonempty_string(
+        output.get("pixel_format"), "output.pixel_format"
+    )
+    if output_pixel_format != "RGB":
+        raise ValueError("output.pixel_format must be 'RGB'")
+    rotate_clockwise_deg = _positive_int(
+        output.get("rotate_clockwise_deg"), "output.rotate_clockwise_deg"
+    )
+    if rotate_clockwise_deg != 90:
+        raise ValueError("output.rotate_clockwise_deg must be 90")
+    output_width = _positive_int(output.get("width"), "output.width")
+    output_height = _positive_int(output.get("height"), "output.height")
+    if (output_width, output_height) != (native_height, native_width):
+        raise ValueError(
+            "90-degree output dimensions must swap native width and height"
+        )
+
+    return CameraConfig(
+        native_width=native_width,
+        native_height=native_height,
+        fps=fps,
+        hardware_pixel_format=hardware_pixel_format,
+        link_name=link_name,
+        forward_xyz=forward_xyz,
+        up_xyz=up_xyz,
+        projection_model=projection_model,
+        vertical_fov_deg=vertical_fov_deg,
+        near_plane_m=near_plane_m,
+        far_plane_m=far_plane_m,
+        intrinsics_calibrated=intrinsics_calibrated,
+        output_pixel_format=output_pixel_format,
+        rotate_clockwise_deg=rotate_clockwise_deg,
+        output_width=output_width,
+        output_height=output_height,
     )
 
 

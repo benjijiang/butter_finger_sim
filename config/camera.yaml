@@ -1,0 +1,29 @@
+# Butter Finger camera configuration.
+#
+# Physical output facts are retained as metadata. PyBullet renders RGB through
+# a pinhole projection; it does not reproduce the real wide-angle distortion.
+# The field of view is provisional until checkerboard calibration is complete.
+
+native:
+  width: 640
+  height: 480
+  fps: 30
+  pixel_format: "YUYV 4:2:2"
+
+optical_frame:
+  link_name: "camera_link"
+  forward_xyz: [0.0, 1.0, 0.0]
+  up_xyz: [-1.0, 0.0, 0.0]
+
+projection:
+  model: "pinhole"
+  vertical_fov_deg: 120.0
+  near_plane_m: 0.02
+  far_plane_m: 2.0
+  calibrated: false
+
+output:
+  pixel_format: "RGB"
+  rotate_clockwise_deg: 90
+  width: 480
+  height: 640

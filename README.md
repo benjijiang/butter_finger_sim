@@ -1,44 +1,44 @@
 # Butter Finger Simulator
 
-A simplified PyBullet digital clone of **Butter Finger**, a four-joint desktop
+A PyBullet digital clone of **Butter Finger**, a four-joint desktop
 robot arm (base, shoulder, elbow, wrist) with a camera near the end of the
 arm. The physical arm is driven by a Raspberry Pi 5 through a Hiwonder
 RasAdapter5A V1.0 servo controller over UART.
 
-> **This is a functional approximate model, not a validated physical digital
-> twin.** Nearly every physical parameter is a placeholder (see below). Its
-> purpose is to let high-level motion and perception code be developed
-> without the physical arm nearby.
+> **This is not yet a validated physical digital twin.** Its geometry and
+> inertial properties now come from a SolidWorks SW2URDF export, but joint
+> ranges, servo dynamics, camera intrinsics, and PWM-to-angle calibration
+> remain unverified. Its purpose is to support development without the
+> physical arm.
 
 ## What it currently simulates
 
-- A four-joint revolute arm built from primitive boxes and cylinders.
+- A four-joint revolute arm rendered from SolidWorks CAD meshes.
 - Interactive GUI control with one slider per joint.
 - Smooth scripted motion using smoothstep interpolation.
 - Config-driven named actions with validated targets and durations.
 - Position control with gravity, a fixed 1/240 s time step, and deterministic
   stepping.
-- A fixed `camera_link` at the wrist tip (camera rendering not implemented
-  yet).
+- RGB rendering from a wrist-mounted `camera_link`.
 
-## Why primitive geometry?
+## CAD geometry
 
-The CAD model of the real arm is currently unavailable. Simple boxes and
-cylinders use joint-to-joint dimensions from a user-provided reference
-drawing, while their cross-sections and exact shapes remain placeholders.
-When the CAD is recovered, mesh files will replace the primitive `<visual>`
-(and eventually `<collision>`) geometry in the URDF **without changing joint
-names or the control API**, so no application code will need to change.
+The link meshes, joint transforms, masses, centers of mass, and inertia tensors
+were exported from the recovered SolidWorks assembly with SW2URDF on
+2026-07-16. The exporter used different names, which are mapped onto the
+project's stable four-joint API by `config/geometry.yaml`. The same meshes are
+temporarily used for visual and collision geometry; simplified collision meshes
+can be added later without changing joint names or application code.
 
 ## Placeholder vs. physically verified
 
-| Recorded / user-provided reference data | Unknown / placeholder |
+| Recorded / CAD-derived data | Unknown / placeholder |
 |---|---|
 | Servo models: base/elbow/wrist = SG90, shoulder = LD-1501MG | Servo datasheet PWM/angle specs (deliberately not recorded) |
-| PWM port mapping: base=1, shoulder=3, elbow=4, wrist=5 (2, 6 unused) | Exact CAD shapes, link cross-sections, masses, inertias |
-| Recorded home PWM: base 1500, shoulder 2200, elbow 2490, wrist 1400 µs | Joint angular ranges (±1.5708 rad is a development limit) |
-| Tested pulse ranges: base/elbow/wrist 505–2495 µs, shoulder 1200–2220 µs | Wrist joint axis (Y is an unverified assumption) |
-| Shoulder home (2200 µs) revalidated on the real machine (2026-07-13) | Camera transform, servo force/velocity |
+| SolidWorks link meshes, joint transforms, masses, and inertia tensors | Independent physical validation of CAD mass properties and transforms |
+| Recorded home PWM: base 1500, shoulder 2200, elbow 2490, wrist 1400 µs | Physical joint angular ranges (configured simulator-only limits are not physical calibration) |
+| Tested pulse ranges: base/elbow/wrist 505–2495 µs, shoulder 1200–2220 µs | Servo force, speed, backlash, compliance |
+| Recorded camera optical center `[0.011, 0.044, 0.013]` m from `wrist_link`; optical axis +Y, native image top -X | Exact camera FOV, intrinsic matrix, and lens distortion |
 | Pi → UART → RasAdapter5A → servo PWM signal chain | PWM-to-angle calibration (none exists yet) |
 | Drawing dimensions: base 32.53 mm; shoulder axis height 73.90 mm; shoulder–elbow 145.2 mm; elbow–wrist 100 mm; wrist–tip 49 mm | Independent CAD/physical verification of those drawing dimensions |
 
@@ -47,17 +47,20 @@ names or the control API**, so no application code will need to change.
 ```text
 butter-finger-sim/
 ├── config/
-│   ├── geometry.yaml        # temporary link dimensions and masses (source of truth)
+│   ├── geometry.yaml        # CAD mesh, joint-transform, and inertial source of truth
 │   ├── joints.yaml          # PWM ports, recorded PWM data, simulation limits
 │   ├── poses.yaml           # named simulation poses in radians
-│   └── actions.yaml         # named simulation action sequences in radians
+│   ├── actions.yaml         # named simulation action sequences in radians
+│   └── camera.yaml          # camera stream metadata and simulation projection
 ├── models/
+│   ├── meshes/                      # SolidWorks-exported link meshes
 │   └── butter_finger_simple.urdf   # GENERATED from config/ — do not hand-edit
 ├── scripts/
 │   └── generate_urdf.py     # regenerates the URDF from the config files
 ├── src/butter_finger/
 │   ├── arm.py               # ArmBackend abstract interface (radians only)
 │   ├── actions.py           # backend-neutral named-action scheduler
+│   ├── camera.py            # optical-frame math and RGB rotation
 │   ├── config.py            # YAML config loader (sim + physical sections)
 │   └── backends/
 │       ├── pybullet_arm.py      # simulation backend (runs on the sim machine)
@@ -69,6 +72,7 @@ butter-finger-sim/
 │   ├── go_home.py           # move to the simulated reference pose
 │   ├── scripted_motion.py   # smoothstep motion sequence
 │   ├── run_action.py        # list/run configured simulation actions
+│   ├── camera_snapshot.py   # render one simulated RGB frame
 │   ├── pi_test_pose.py      # REAL HARDWARE: joint-by-joint home-pose test
 │   └── pi_sweep_base.py     # REAL HARDWARE: base sweep around home
 ├── tests/                   # dependency-light; none require PyBullet or hardware
@@ -130,6 +134,32 @@ their steps through `ArmBackend`; `PyBulletArm` currently supplies the only
 working radians backend. These action values are temporary simulation data,
 not hardware-approved commands, and cannot be sent to `PWMRobotArm`.
 
+## Simulated RGB camera
+
+`PyBulletArm.capture_rgb()` renders the current `camera_link` view at the
+sensor's native `640×480`, converts PyBullet RGBA to RGB, then rotates the
+frame 90° clockwise. The returned NumPy array has HWC shape `(640, 480, 3)`,
+corresponding to a portrait image width×height of `480×640`.
+
+```python
+with PyBulletArm(gui=False) as arm:
+    arm.reset_joints(arm.config.home_pose)
+    arm.step()
+    rgb = arm.capture_rgb()
+```
+
+Create a PNG snapshot:
+
+```bash
+python examples/camera_snapshot.py
+python examples/camera_snapshot.py --output camera.png --gui
+```
+
+The configured `120°` native vertical FOV is provisional. PyBullet uses a
+pinhole projection and does not reproduce the physical camera's strong
+wide-angle/fisheye distortion. Replace the projection parameters only after
+checkerboard calibration provides measured intrinsics and distortion.
+
 ## Real hardware: the PWM layer (Raspberry Pi only)
 
 Until the PWM-to-angle calibration exists, the real arm is driven directly
@@ -176,6 +206,7 @@ python -m pytest
 python examples/joint_sliders.py
 python examples/run_action.py --list
 python examples/run_action.py base_scan
+python examples/camera_snapshot.py
 ```
 
 ## Limitations of simulating cheap open-loop hobby servos
@@ -204,11 +235,13 @@ real dynamic behavior.
 
 1. ~~Recover the original Pi source code~~ — recovered: it lives on the Pi
    as `board_demo/butter_finger.py` (class `RobotArm`) and is now ported
-   into this repository as `PWMRobotArm`. The CAD model is still missing.
-2. Verify the reference-drawing dimensions against CAD or the physical arm
-   and update `config/geometry.yaml` if needed.
-3. Replace primitive visuals with CAD meshes (same joint names, same API).
+   into this repository as `PWMRobotArm`.
+2. ~~Replace primitive geometry with recovered CAD meshes~~ — imported from
+   the SolidWorks SW2URDF export on 2026-07-16.
+3. Verify the CAD joint frames, recorded camera transform, and mass properties
+   against the physical arm; create simplified collision meshes.
 4. Measure PWM-to-angle calibration per joint on the physical arm.
 5. Implement `RaspberryPiArm` (radians) on top of the PWM layer with
    verified calibration only.
-6. Add camera rendering from `camera_link`.
+6. ~~Add camera rendering from `camera_link`~~ — RGB capture implemented with
+   provisional pinhole intrinsics; physical camera calibration remains.

@@ -26,7 +26,7 @@ def main() -> int:
     with arm:
         # Start from an offset pose so the homing motion is visible.
         arm.reset_joints({"base": 0.9, "shoulder": 0.7, "elbow": -0.8, "wrist": 0.5})
-        print("Moving to sim_home (all joints 0.0 rad)...")
+        print("Moving to configured sim_home...")
         arm.go_home()
         positions = arm.get_joint_positions()
         print("Joint positions after homing (rad):")

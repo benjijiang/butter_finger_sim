@@ -51,12 +51,15 @@ def main() -> int:
 
         try:
             while arm.is_connected():
-                targets = {
-                    joint: arm.pb.readUserDebugParameter(
+                targets: dict[str, float] = {}
+                for joint, slider in sliders.items():
+                    value = arm.pb.readUserDebugParameter(
                         slider, physicsClientId=arm.client_id
                     )
-                    for joint, slider in sliders.items()
-                }
+                    # Debug sliders return float32-like values, so an endpoint
+                    # can differ from its configured limit by a few nanoradians.
+                    limits = arm.config.sim_limits[joint]
+                    targets[joint] = limits.clamp(value)
                 arm.move_joints(targets)
                 arm.step(realtime=True)
         except arm.pb.error:

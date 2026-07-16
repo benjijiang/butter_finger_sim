@@ -1,210 +1,170 @@
 <?xml version="1.0"?>
 <!--
-  Butter Finger: simplified placeholder model of the four-joint desktop arm.
+  Butter Finger CAD model.
 
   GENERATED FILE. Do not edit by hand.
-  Regenerate with: python scripts/generate_urdf.py
-  Dimension source: config/geometry.yaml
-  Joint source:     config/joints.yaml (simulation limits and zero offsets)
+  Regenerate with: python3 scripts/generate_urdf.py
 
-  MODEL ASSUMPTIONS:
-  - Primary link lengths come from a user-provided dimensioned drawing dated
-    2026-07-15; they have not been independently verified against CAD.
-  - Primitive shapes, cross-sections, masses, and inertias remain placeholders
-    and are NOT suitable for payload, structural, or servo-torque conclusions.
-  - The wrist joint axis (Y) is an UNVERIFIED assumption; verify against
-    the physical arm.
-  - Joint limits of +/- 1.5708 rad are simulation-development limits, not
-    physical calibration.
-  - The camera transform is a guess; measure it on the real arm.
-  - Load with useFixedBase=True so the base stays fixed in PyBullet.
+  Mesh frames, joint transforms, masses, and inertia tensors were exported
+  from SolidWorks with SW2URDF on 2026-07-16. The SW2URDF zero-width limits
+  were intentionally replaced with development-only simulation limits from
+  config/joints.yaml. The camera frame uses the recorded optical-center
+  transform from config/geometry.yaml; its intrinsics remain provisional.
+  Load with useFixedBase=True.
 -->
 <robot name="butter_finger">
+  <material name="cad_grey">
+    <color rgba="0.75 0.75 0.75 1"/>
+  </material>
 
-  <!-- base_link: fixed base cylinder (placeholder dimensions) -->
   <link name="base_link">
     <visual>
-      <origin xyz="0 0 0.016265" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <cylinder radius="0.045" length="0.03253"/>
+        <mesh filename="meshes/base_link.stl"/>
       </geometry>
-      <material name="base_grey">
-        <color rgba="0.25 0.25 0.25 1"/>
-      </material>
+      <material name="cad_grey"/>
     </visual>
     <collision>
-      <origin xyz="0 0 0.016265" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <cylinder radius="0.045" length="0.03253"/>
+        <mesh filename="meshes/base_link.stl"/>
       </geometry>
     </collision>
     <inertial>
-      <origin xyz="0 0 0.016265" rpy="0 0 0"/>
-      <mass value="0.3"/>
-      <inertia ixx="0.00017833002" ixy="0" ixz="0" iyy="0.00017833002" iyz="0" izz="0.00030375"/>
+      <origin xyz="4.44769784005585e-06 -0.00272368672308015 -3.52117050677521e-05" rpy="0 0 0"/>
+      <mass value="0.117956347342971"/>
+      <inertia ixx="5.16379995080435e-05" ixy="-7.1735716911798e-12" ixz="-6.26544070809245e-09" iyy="8.54863593083873e-05" iyz="1.98513945412824e-07" izz="5.24951696421001e-05"/>
     </inertial>
   </link>
 
-  <!-- base_joint: yaw about the vertical Z axis -->
+  <link name="turret_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/turret_link.stl"/>
+      </geometry>
+      <material name="cad_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/turret_link.stl"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0.0216898313941301 -0.000872271219923791 -0.0116026222230294" rpy="0 0 0"/>
+      <mass value="0.136250635109382"/>
+      <inertia ixx="6.97372418737439e-05" ixy="1.7362293140102e-06" ixz="7.72200245787855e-06" iyy="5.5679349903428e-05" iyz="6.33305847996462e-07" izz="6.11792148050112e-05"/>
+    </inertial>
+  </link>
+
+  <link name="upper_arm_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/upper_arm_link.stl"/>
+      </geometry>
+      <material name="cad_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/upper_arm_link.stl"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0.0441477969675847 -8.44484394296047e-06 0.00791055059896283" rpy="0 0 0"/>
+      <mass value="0.0827380990614375"/>
+      <inertia ixx="1.42492853790166e-05" ixy="1.8047296268546e-10" ixz="-7.00193626203197e-06" iyy="0.000169030165174317" iyz="1.18551899069e-10" izz="0.000168612981312038"/>
+    </inertial>
+  </link>
+
+  <link name="forearm_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/forearm_link.stl"/>
+      </geometry>
+      <material name="cad_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/forearm_link.stl"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="8.88597070924924e-10 -0.0508383452991497 -0.00545674801926912" rpy="0 0 0"/>
+      <mass value="0.0294574375311473"/>
+      <inertia ixx="3.10077246565589e-05" ixy="-1.61575988957095e-14" ixz="-3.14177560134728e-12" iyy="8.99272677070429e-06" iyz="6.9181222479369e-09" izz="2.40107466157349e-05"/>
+    </inertial>
+  </link>
+
+  <link name="wrist_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wrist_link.stl"/>
+      </geometry>
+      <material name="cad_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wrist_link.stl"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0.000452210654536336 0.00898859070235314 -0.00690941410614047" rpy="0 0 0"/>
+      <mass value="0.0181766061397578"/>
+      <inertia ixx="1.68299814445701e-06" ixy="4.56744756400051e-09" ixz="-3.19456415006301e-09" iyy="1.01953577809695e-06" iyz="-6.21306100109587e-08" izz="1.72788717301146e-06"/>
+    </inertial>
+  </link>
+
   <joint name="base_joint" type="revolute">
     <parent link="base_link"/>
     <child link="turret_link"/>
-    <origin xyz="0 0 0.03253" rpy="0 0 0"/>
-    <axis xyz="0 0 1"/>
+    <origin xyz="0 0 0.01365" rpy="2.1275 -1.5708 0"/>
+    <axis xyz="1 0 0"/>
     <limit lower="-1.5708" upper="1.5708" effort="5" velocity="3"/>
   </joint>
 
-  <!-- turret_link: small yaw platform between base and shoulder (placeholder) -->
-  <link name="turret_link">
-    <visual>
-      <origin xyz="0 0 0.020685" rpy="0 0 0"/>
-      <geometry>
-        <cylinder radius="0.02" length="0.04137"/>
-      </geometry>
-      <material name="turret_grey">
-        <color rgba="0.45 0.45 0.45 1"/>
-      </material>
-    </visual>
-    <collision>
-      <origin xyz="0 0 0.020685" rpy="0 0 0"/>
-      <geometry>
-        <cylinder radius="0.02" length="0.04137"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <origin xyz="0 0 0.020685" rpy="0 0 0"/>
-      <mass value="0.05"/>
-      <inertia ixx="1.2131154e-05" ixy="0" ixz="0" iyy="1.2131154e-05" iyz="0" izz="1e-05"/>
-    </inertial>
-  </link>
-
-  <!-- shoulder_joint: pitch about the horizontal Y axis -->
   <joint name="shoulder_joint" type="revolute">
     <parent link="turret_link"/>
     <child link="upper_arm_link"/>
-    <origin xyz="0 0 0.04137" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
-    <limit lower="-1.5708" upper="1.5708" effort="5" velocity="3"/>
+    <origin xyz="0.04225 0 0" rpy="0 0 1.0414"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-1.571" upper="0.05" effort="5" velocity="3"/>
   </joint>
 
-  <!-- upper_arm_link: extends +Z from the shoulder joint -->
-  <link name="upper_arm_link">
-    <visual>
-      <origin xyz="0 0 0.0726" rpy="0 0 0"/>
-      <geometry>
-        <box size="0.035 0.035 0.1452"/>
-      </geometry>
-      <material name="arm_yellow">
-        <color rgba="0.95 0.8 0.2 1"/>
-      </material>
-    </visual>
-    <collision>
-      <origin xyz="0 0 0.0726" rpy="0 0 0"/>
-      <geometry>
-        <box size="0.035 0.035 0.1452"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <origin xyz="0 0 0.0726" rpy="0 0 0"/>
-      <mass value="0.08"/>
-      <inertia ixx="0.00014872027" ixy="0" ixz="0" iyy="0.00014872027" iyz="0" izz="1.6333333e-05"/>
-    </inertial>
-  </link>
-
-  <!-- elbow_joint: pitch about a horizontal Y axis parallel to the shoulder -->
   <joint name="elbow_joint" type="revolute">
     <parent link="upper_arm_link"/>
     <child link="forearm_link"/>
-    <origin xyz="0 0 0.1452" rpy="0 0.85 0"/>
-    <axis xyz="0 1 0"/>
-    <limit lower="-1.5708" upper="1.5708" effort="5" velocity="3"/>
+    <origin xyz="0.1452 -0.0001 0" rpy="3.1416 0 2.0591"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.075" upper="0.065" effort="5" velocity="3"/>
   </joint>
 
-  <!-- forearm_link: extends +Z from the elbow joint -->
-  <link name="forearm_link">
-    <visual>
-      <origin xyz="0 0 0.05" rpy="0 0 0"/>
-      <geometry>
-        <box size="0.035 0.035 0.1"/>
-      </geometry>
-      <material name="forearm_orange">
-        <color rgba="0.9 0.6 0.15 1"/>
-      </material>
-    </visual>
-    <collision>
-      <origin xyz="0 0 0.05" rpy="0 0 0"/>
-      <geometry>
-        <box size="0.035 0.035 0.1"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <origin xyz="0 0 0.05" rpy="0 0 0"/>
-      <mass value="0.08"/>
-      <inertia ixx="7.4833333e-05" ixy="0" ixz="0" iyy="7.4833333e-05" iyz="0" izz="1.6333333e-05"/>
-    </inertial>
-  </link>
-
-  <!-- wrist_joint: TEMPORARY Y-axis assumption; verify on the physical arm -->
   <joint name="wrist_joint" type="revolute">
     <parent link="forearm_link"/>
     <child link="wrist_link"/>
-    <origin xyz="0 0 0.1" rpy="0 0.25 0"/>
-    <axis xyz="0 1 0"/>
-    <limit lower="-1.5708" upper="1.5708" effort="5" velocity="3"/>
+    <origin xyz="0 -0.1 0" rpy="0 0.074136 2.2399"/>
+    <axis xyz="0.074068 0 -0.99725"/>
+    <limit lower="-2.071" upper="1.0708" effort="5" velocity="3"/>
   </joint>
 
-  <!-- wrist_link: extends +Z from the wrist joint -->
-  <link name="wrist_link">
-    <visual>
-      <origin xyz="0 0 0.0245" rpy="0 0 0"/>
-      <geometry>
-        <box size="0.035 0.035 0.049"/>
-      </geometry>
-      <material name="wrist_grey">
-        <color rgba="0.45 0.45 0.45 1"/>
-      </material>
-    </visual>
-    <collision>
-      <origin xyz="0 0 0.0245" rpy="0 0 0"/>
-      <geometry>
-        <box size="0.035 0.035 0.049"/>
-      </geometry>
-    </collision>
+  <link name="camera_link">
     <inertial>
-      <origin xyz="0 0 0.0245" rpy="0 0 0"/>
-      <mass value="0.04"/>
-      <inertia ixx="1.2086667e-05" ixy="0" ixz="0" iyy="1.2086667e-05" iyz="0" izz="8.1666667e-06"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.000001"/>
+      <inertia ixx="0.000000000001" ixy="0" ixz="0" iyy="0.000000000001" iyz="0" izz="0.000000000001"/>
     </inertial>
   </link>
 
-  <!-- camera_joint: fixed mount at the wrist tip; transform is a PLACEHOLDER -->
   <joint name="camera_joint" type="fixed">
     <parent link="wrist_link"/>
     <child link="camera_link"/>
-    <origin xyz="0 0 0.049" rpy="0 0 0"/>
+    <origin xyz="0.011 0.044 0.013" rpy="0 0 0"/>
   </joint>
-
-  <!-- camera_link: camera modeled as a small cube (rendering not implemented yet) -->
-  <link name="camera_link">
-    <visual>
-      <origin xyz="0 0 0.01" rpy="0 0 0"/>
-      <geometry>
-        <box size="0.02 0.02 0.02"/>
-      </geometry>
-      <material name="camera_blue">
-        <color rgba="0.2 0.4 0.9 1"/>
-      </material>
-    </visual>
-    <collision>
-      <origin xyz="0 0 0.01" rpy="0 0 0"/>
-      <geometry>
-        <box size="0.02 0.02 0.02"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <origin xyz="0 0 0.01" rpy="0 0 0"/>
-      <mass value="0.01"/>
-      <inertia ixx="6.6666667e-07" ixy="0" ixz="0" iyy="6.6666667e-07" iyz="0" izz="6.6666667e-07"/>
-    </inertial>
-  </link>
 </robot>

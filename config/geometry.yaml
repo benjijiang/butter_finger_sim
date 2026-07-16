@@ -1,35 +1,132 @@
-# Butter Finger — temporary geometry
+# Butter Finger — CAD geometry exported from SolidWorks
 #
-# Primary dimensions below come from the user-provided dimensioned reference
-# drawing dated 2026-07-15. They have not been independently checked against
-# CAD or the physical arm. Cross-sections, radii, masses, and inertias remain
-# placeholders. Regenerate the URDF after editing:
+# The mesh frames, joint transforms, masses, centers of mass, and inertia
+# tensors below were exported with SW2URDF on 2026-07-16. Values use SI units.
+# Joint limits and motor-control parameters remain simulation-only values in
+# config/joints.yaml. Regenerate the URDF after editing:
 #
 #     python scripts/generate_urdf.py
 #
-# Units: meters (SI).
+# The SolidWorks assembly used different names. They map to this repository's
+# stable API as follows:
+#   shoulder -> base_joint
+#   arm      -> shoulder_joint
+#   forearm  -> elbow_joint
+#   wirst    -> wrist_joint
 
-# User-provided dimensions from the reference drawing.
-base_height: 0.03253             # base bottom to base_joint
-shoulder_joint_height: 0.07390   # absolute height above the base bottom
-upper_arm_length: 0.1452         # shoulder_joint to elbow_joint
-forearm_length: 0.100            # elbow_joint to wrist_joint
-wrist_length: 0.049              # wrist_joint to camera/end tip
+source:
+  kind: "SolidWorks SW2URDF"
+  assembly: "URDF Assy"
+  exported_at: "2026-07-16"
 
-# Derived/visual-only placeholders (pure guesses, never measured)
-link_width: 0.035
-base_radius: 0.045        # footprint of the base cylinder
-turret_radius: 0.020
-camera_size: 0.020        # camera modeled as a small cube at the wrist tip
+# Retained for comparison with the earlier dimensioned drawing. The CAD joint
+# transforms below, rather than these scalar dimensions, drive the URDF.
+reference_dimensions_m:
+  base_height: 0.03253
+  shoulder_joint_height: 0.07390
+  upper_arm_length: 0.1452
+  forearm_length: 0.100
+  wrist_length: 0.049
 
-# Approximate masses in kilograms.
-# PLACEHOLDERS: rough guesses with valid positive values so PyBullet's
-# dynamics are stable. NOT suitable for payload, structural, or
-# servo-torque conclusions.
-masses_kg:
-  base: 0.300
-  turret: 0.050
-  upper_arm: 0.080
-  forearm: 0.080
-  wrist: 0.040
-  camera: 0.010
+links:
+  base_link:
+    mesh: "meshes/base_link.stl"
+    mass_kg: 0.117956347342971
+    center_of_mass_xyz: [0.00000444769784005585, -0.00272368672308015, -0.0000352117050677521]
+    inertia:
+      ixx: 0.0000516379995080435
+      ixy: -0.0000000000071735716911798
+      ixz: -0.00000000626544070809245
+      iyy: 0.0000854863593083873
+      iyz: 0.000000198513945412824
+      izz: 0.0000524951696421001
+
+  turret_link:
+    mesh: "meshes/turret_link.stl"
+    mass_kg: 0.136250635109382
+    center_of_mass_xyz: [0.0216898313941301, -0.000872271219923791, -0.0116026222230294]
+    inertia:
+      ixx: 0.0000697372418737439
+      ixy: 0.0000017362293140102
+      ixz: 0.00000772200245787855
+      iyy: 0.000055679349903428
+      iyz: 0.000000633305847996462
+      izz: 0.0000611792148050112
+
+  upper_arm_link:
+    mesh: "meshes/upper_arm_link.stl"
+    mass_kg: 0.0827380990614375
+    center_of_mass_xyz: [0.0441477969675847, -0.00000844484394296047, 0.00791055059896283]
+    inertia:
+      ixx: 0.0000142492853790166
+      ixy: 0.00000000018047296268546
+      ixz: -0.00000700193626203197
+      iyy: 0.000169030165174317
+      iyz: 0.000000000118551899069
+      izz: 0.000168612981312038
+
+  forearm_link:
+    mesh: "meshes/forearm_link.stl"
+    mass_kg: 0.0294574375311473
+    center_of_mass_xyz: [0.000000000888597070924924, -0.0508383452991497, -0.00545674801926912]
+    inertia:
+      ixx: 0.0000310077246565589
+      ixy: -0.0000000000000161575988957095
+      ixz: -0.00000000000314177560134728
+      iyy: 0.00000899272677070429
+      iyz: 0.0000000069181222479369
+      izz: 0.0000240107466157349
+
+  wrist_link:
+    mesh: "meshes/wrist_link.stl"
+    mass_kg: 0.0181766061397578
+    center_of_mass_xyz: [0.000452210654536336, 0.00898859070235314, -0.00690941410614047]
+    inertia:
+      ixx: 0.00000168299814445701
+      ixy: 0.00000000456744756400051
+      ixz: -0.00000000319456415006301
+      iyy: 0.00000101953577809695
+      iyz: -0.0000000621306100109587
+      izz: 0.00000172788717301146
+
+# Joint origins and axes are copied from the SolidWorks export. Each origin is
+# expressed in its parent link frame; each axis is expressed in the joint frame.
+joints:
+  base_joint:
+    parent: "base_link"
+    child: "turret_link"
+    origin_xyz: [0.0, 0.0, 0.01365]
+    origin_rpy: [2.1275, -1.5708, 0.0]
+    axis_xyz: [1.0, 0.0, 0.0]
+
+  shoulder_joint:
+    parent: "turret_link"
+    child: "upper_arm_link"
+    origin_xyz: [0.04225, 0.0, 0.0]
+    origin_rpy: [0.0, 0.0, 1.0414]
+    axis_xyz: [0.0, 0.0, 1.0]
+
+  elbow_joint:
+    parent: "upper_arm_link"
+    child: "forearm_link"
+    origin_xyz: [0.1452, -0.0001, 0.0]
+    origin_rpy: [3.1416, 0.0, 2.0591]
+    axis_xyz: [0.0, 0.0, 1.0]
+
+  wrist_joint:
+    parent: "forearm_link"
+    child: "wrist_link"
+    origin_xyz: [0.0, -0.1, 0.0]
+    origin_rpy: [0.0, 0.074136, 2.2399]
+    axis_xyz: [0.074068, 0.0, -0.99725]
+
+# SW2URDF did not export a separate camera frame. This recorded optical-center
+# offset is expressed in the wrist_link frame. The camera looks along local +Y;
+# the top of its native 640x480 image points along local -X (image right is +Z).
+# The camera intentionally has no duplicate geometry because it is already part
+# of the wrist CAD mesh.
+camera_mount:
+  parent: "wrist_link"
+  child: "camera_link"
+  origin_xyz: [0.011, 0.044, 0.013]
+  origin_rpy: [0.0, 0.0, 0.0]

@@ -1,13 +1,19 @@
 """Validate the YAML configuration files and the config loader."""
 from __future__ import annotations
 
+import copy
 import math
 from pathlib import Path
 
 import pytest
 import yaml
 
-from butter_finger.config import JOINT_NAMES, load_arm_config
+from butter_finger.config import (
+    JOINT_NAMES,
+    JointLimits,
+    load_arm_config,
+    load_camera_config,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = REPO_ROOT / "config"
@@ -26,6 +32,11 @@ def poses_cfg() -> dict:
 @pytest.fixture(scope="module")
 def geometry_cfg() -> dict:
     return yaml.safe_load((CONFIG_DIR / "geometry.yaml").read_text(encoding="utf-8"))
+
+
+@pytest.fixture(scope="module")
+def camera_cfg() -> dict:
+    return yaml.safe_load((CONFIG_DIR / "camera.yaml").read_text(encoding="utf-8"))
 
 
 def test_confirmed_pwm_port_mapping(joints_cfg: dict) -> None:
@@ -75,9 +86,19 @@ def test_shoulder_home_note_present(joints_cfg: dict) -> None:
 def test_simulation_limits(joints_cfg: dict) -> None:
     limits = joints_cfg["simulation"]["limits_rad"]
     assert set(limits) == set(JOINT_NAMES)
-    for joint, entry in limits.items():
-        assert entry["lower"] == pytest.approx(-1.5708)
-        assert entry["upper"] == pytest.approx(1.5708)
+    assert limits == {
+        "base": {"lower": -1.5708, "upper": 1.5708},
+        "shoulder": {"lower": -1.571, "upper": 0.050},
+        "elbow": {"lower": -3.075, "upper": 0.065},
+        "wrist": {"lower": -2.071, "upper": 1.0708},
+    }
+
+
+def test_simulation_limits_clamp_slider_rounding() -> None:
+    limits = JointLimits(lower_rad=-3.075, upper_rad=0.065)
+    assert limits.clamp(-3.075000047683716) == -3.075
+    assert limits.clamp(0.0650000050663948) == 0.065
+    assert limits.clamp(-0.9) == -0.9
 
 
 def test_simulation_zero_offsets(joints_cfg: dict) -> None:
@@ -85,40 +106,132 @@ def test_simulation_zero_offsets(joints_cfg: dict) -> None:
     assert offsets == {
         "base": 0.0,
         "shoulder": 0.0,
-        "elbow": 0.85,
-        "wrist": 0.25,
+        "elbow": 0.0,
+        "wrist": 0.0,
     }
     assert all(math.isfinite(float(offset)) for offset in offsets.values())
 
 
-def test_sim_home_pose_is_neutral(poses_cfg: dict) -> None:
+def test_sim_home_pose(poses_cfg: dict) -> None:
     home = poses_cfg["poses"]["sim_home"]
-    assert set(home) == set(JOINT_NAMES)
-    for joint, angle in home.items():
-        assert angle == 0.0, f"sim_home {joint} must be the neutral reference (0 rad)"
+    assert home == {
+        "base": 0.0,
+        "shoulder": 0.0,
+        "elbow": 0.0,
+        "wrist": -1.571,
+    }
 
 
-def test_geometry_values_are_positive(geometry_cfg: dict) -> None:
-    for key in (
-        "base_height",
-        "shoulder_joint_height",
-        "upper_arm_length",
-        "forearm_length",
-        "wrist_length",
-        "link_width",
-    ):
-        assert geometry_cfg[key] > 0
-    for name, mass in geometry_cfg["masses_kg"].items():
-        assert mass > 0, f"mass of {name} must be positive"
+def test_wrist_range_extends_below_home_by_point_five_rad(
+    joints_cfg: dict, poses_cfg: dict
+) -> None:
+    lower = joints_cfg["simulation"]["limits_rad"]["wrist"]["lower"]
+    home = poses_cfg["poses"]["sim_home"]["wrist"]
+    assert home - lower == pytest.approx(0.5)
+
+
+def test_cad_link_properties_are_positive(geometry_cfg: dict) -> None:
+    assert set(geometry_cfg["links"]) == {
+        "base_link",
+        "turret_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_link",
+    }
+    for name, link in geometry_cfg["links"].items():
+        assert link["mass_kg"] > 0, f"mass of {name} must be positive"
+        assert link["mesh"].endswith(".stl")
+        for diagonal in ("ixx", "iyy", "izz"):
+            assert link["inertia"][diagonal] > 0
 
 
 def test_reference_drawing_dimensions(geometry_cfg: dict) -> None:
-    assert geometry_cfg["base_height"] == pytest.approx(0.03253)
-    assert geometry_cfg["shoulder_joint_height"] == pytest.approx(0.07390)
-    assert geometry_cfg["upper_arm_length"] == pytest.approx(0.1452)
-    assert geometry_cfg["forearm_length"] == pytest.approx(0.100)
-    assert geometry_cfg["wrist_length"] == pytest.approx(0.049)
-    assert geometry_cfg["shoulder_joint_height"] > geometry_cfg["base_height"]
+    dimensions = geometry_cfg["reference_dimensions_m"]
+    assert dimensions["base_height"] == pytest.approx(0.03253)
+    assert dimensions["shoulder_joint_height"] == pytest.approx(0.07390)
+    assert dimensions["upper_arm_length"] == pytest.approx(0.1452)
+    assert dimensions["forearm_length"] == pytest.approx(0.100)
+    assert dimensions["wrist_length"] == pytest.approx(0.049)
+    assert dimensions["shoulder_joint_height"] > dimensions["base_height"]
+
+
+def test_cad_joint_names_are_stable(geometry_cfg: dict) -> None:
+    assert tuple(geometry_cfg["joints"]) == (
+        "base_joint",
+        "shoulder_joint",
+        "elbow_joint",
+        "wrist_joint",
+    )
+
+
+def test_recorded_camera_mount_and_optical_axes(
+    geometry_cfg: dict, camera_cfg: dict
+) -> None:
+    mount = geometry_cfg["camera_mount"]
+    optical = camera_cfg["optical_frame"]
+    assert mount["parent"] == "wrist_link"
+    assert mount["child"] == "camera_link"
+    assert mount["origin_xyz"] == pytest.approx([0.011, 0.044, 0.013])
+    assert mount["origin_rpy"] == pytest.approx([0.0, 0.0, 0.0])
+    assert optical["link_name"] == "camera_link"
+    assert optical["forward_xyz"] == pytest.approx([0.0, 1.0, 0.0])
+    assert optical["up_xyz"] == pytest.approx([-1.0, 0.0, 0.0])
+
+
+def test_camera_stream_and_projection_config(camera_cfg: dict) -> None:
+    assert camera_cfg["native"] == {
+        "width": 640,
+        "height": 480,
+        "fps": 30,
+        "pixel_format": "YUYV 4:2:2",
+    }
+    assert camera_cfg["projection"] == {
+        "model": "pinhole",
+        "vertical_fov_deg": 120.0,
+        "near_plane_m": 0.02,
+        "far_plane_m": 2.0,
+        "calibrated": False,
+    }
+    assert camera_cfg["output"] == {
+        "pixel_format": "RGB",
+        "rotate_clockwise_deg": 90,
+        "width": 480,
+        "height": 640,
+    }
+
+
+def test_load_camera_config() -> None:
+    config = load_camera_config()
+    assert config.native_aspect_ratio == pytest.approx(4.0 / 3.0)
+    assert config.output_shape == (640, 480, 3)
+    assert config.intrinsics_calibrated is False
+
+
+@pytest.mark.parametrize(
+    ("section", "key", "value", "message"),
+    [
+        ("projection", "vertical_fov_deg", 180.0, "between 0 and 180"),
+        ("projection", "near_plane_m", 2.0, "near_plane_m < far_plane_m"),
+        ("output", "width", 640, "must swap native"),
+        ("optical_frame", "up_xyz", [0.0, 1.0, 0.0], "must be orthogonal"),
+    ],
+)
+def test_rejects_invalid_camera_config(
+    tmp_path: Path,
+    camera_cfg: dict,
+    section: str,
+    key: str,
+    value,
+    message: str,
+) -> None:
+    invalid = copy.deepcopy(camera_cfg)
+    invalid[section][key] = value
+    (tmp_path / "camera.yaml").write_text(
+        yaml.safe_dump(invalid),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=message):
+        load_camera_config(tmp_path)
 
 
 def test_load_arm_config() -> None:

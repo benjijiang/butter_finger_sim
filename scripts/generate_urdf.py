@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""Generate models/butter_finger_simple.urdf from the config files.
+"""Generate the Butter Finger URDF from CAD geometry and simulation config.
 
-Run this on the sim machine (or any machine with PyYAML installed) after editing
-config/geometry.yaml or the simulation settings in config/joints.yaml:
+Run after editing config/geometry.yaml or the simulation section of
+config/joints.yaml:
 
-    python scripts/generate_urdf.py
+    python3 scripts/generate_urdf.py
 
-Primary joint-to-joint dimensions come from a user-provided reference drawing.
-Primitive shapes, cross-sections, masses, and inertias remain placeholders until
-the real CAD model is recovered. When CAD meshes become available, only the
-<visual>/<collision> geometry should change; joint names and the control API
-must stay the same.
+The CAD mesh frames, joint transforms, masses, and inertias came from the
+2026-07-16 SolidWorks SW2URDF export. Joint names remain the stable names used
+by the ArmBackend API.
 """
 from __future__ import annotations
 
+import math
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -23,114 +23,70 @@ GEOMETRY_PATH = REPO_ROOT / "config" / "geometry.yaml"
 JOINTS_PATH = REPO_ROOT / "config" / "joints.yaml"
 OUTPUT_PATH = REPO_ROOT / "models" / "butter_finger_simple.urdf"
 
+LINK_ORDER = (
+    "base_link",
+    "turret_link",
+    "upper_arm_link",
+    "forearm_link",
+    "wrist_link",
+)
+JOINT_ORDER = (
+    "base_joint",
+    "shoulder_joint",
+    "elbow_joint",
+    "wrist_joint",
+)
+
 
 def fmt(value: float) -> str:
-    """Format a number for URDF output, stable across regenerations."""
-    return f"{value:.8g}"
+    """Format a finite number stably across regenerations."""
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"URDF values must be finite, got {value!r}")
+    return f"{number:.15g}"
 
 
-def axis_offset_rpy(axis: str, offset_rad: float) -> str:
-    """Express a zero-configuration offset as URDF roll/pitch/yaw."""
-    rpy_by_axis = {
-        "1 0 0": (offset_rad, 0.0, 0.0),
-        "0 1 0": (0.0, offset_rad, 0.0),
-        "0 0 1": (0.0, 0.0, offset_rad),
-    }
-    try:
-        rpy = rpy_by_axis[axis]
-    except KeyError as exc:
-        raise ValueError(f"Unsupported joint axis for zero offset: {axis!r}") from exc
-    return " ".join(fmt(value) for value in rpy)
+def vector(values: list[float], *, label: str) -> str:
+    if len(values) != 3:
+        raise ValueError(f"{label} must contain exactly three values")
+    return " ".join(fmt(value) for value in values)
 
 
-def box_inertia(mass: float, x: float, y: float, z: float) -> tuple[float, float, float]:
-    """Diagonal inertia of a solid box about its center of mass."""
-    return (
-        mass * (y * y + z * z) / 12.0,
-        mass * (x * x + z * z) / 12.0,
-        mass * (x * x + y * y) / 12.0,
+def mesh_link(name: str, config: dict[str, Any]) -> str:
+    """Render one CAD mesh link with its SolidWorks inertial properties."""
+    mesh_path = config["mesh"]
+    absolute_mesh_path = OUTPUT_PATH.parent / mesh_path
+    if not absolute_mesh_path.is_file():
+        raise FileNotFoundError(f"{name}: mesh not found at {absolute_mesh_path}")
+
+    center_of_mass = vector(
+        config["center_of_mass_xyz"], label=f"{name}.center_of_mass_xyz"
+    )
+    inertia = config["inertia"]
+    inertia_attributes = " ".join(
+        f'{component}="{fmt(inertia[component])}"'
+        for component in ("ixx", "ixy", "ixz", "iyy", "iyz", "izz")
     )
 
-
-def cylinder_inertia(mass: float, radius: float, height: float) -> tuple[float, float, float]:
-    """Diagonal inertia of a solid cylinder (axis along Z) about its center of mass."""
-    ixx = mass * (3.0 * radius * radius + height * height) / 12.0
-    return (ixx, ixx, mass * radius * radius / 2.0)
-
-
-def cylinder_link(
-    name: str,
-    radius: float,
-    length: float,
-    mass: float,
-    material: str,
-    rgba: str,
-    comment: str,
-) -> str:
-    """Cylinder link extending +Z from the link origin (its parent joint)."""
-    z = length / 2.0
-    ixx, iyy, izz = cylinder_inertia(mass, radius, length)
     return f"""
-  <!-- {comment} -->
   <link name="{name}">
     <visual>
-      <origin xyz="0 0 {fmt(z)}" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <cylinder radius="{fmt(radius)}" length="{fmt(length)}"/>
+        <mesh filename="{mesh_path}"/>
       </geometry>
-      <material name="{material}">
-        <color rgba="{rgba}"/>
-      </material>
+      <material name="cad_grey"/>
     </visual>
     <collision>
-      <origin xyz="0 0 {fmt(z)}" rpy="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <cylinder radius="{fmt(radius)}" length="{fmt(length)}"/>
+        <mesh filename="{mesh_path}"/>
       </geometry>
     </collision>
     <inertial>
-      <origin xyz="0 0 {fmt(z)}" rpy="0 0 0"/>
-      <mass value="{fmt(mass)}"/>
-      <inertia ixx="{fmt(ixx)}" ixy="0" ixz="0" iyy="{fmt(iyy)}" iyz="0" izz="{fmt(izz)}"/>
-    </inertial>
-  </link>
-"""
-
-
-def box_link(
-    name: str,
-    width: float,
-    length: float,
-    mass: float,
-    material: str,
-    rgba: str,
-    comment: str,
-) -> str:
-    """Box link extending +Z from the link origin (its parent joint)."""
-    z = length / 2.0
-    ixx, iyy, izz = box_inertia(mass, width, width, length)
-    return f"""
-  <!-- {comment} -->
-  <link name="{name}">
-    <visual>
-      <origin xyz="0 0 {fmt(z)}" rpy="0 0 0"/>
-      <geometry>
-        <box size="{fmt(width)} {fmt(width)} {fmt(length)}"/>
-      </geometry>
-      <material name="{material}">
-        <color rgba="{rgba}"/>
-      </material>
-    </visual>
-    <collision>
-      <origin xyz="0 0 {fmt(z)}" rpy="0 0 0"/>
-      <geometry>
-        <box size="{fmt(width)} {fmt(width)} {fmt(length)}"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <origin xyz="0 0 {fmt(z)}" rpy="0 0 0"/>
-      <mass value="{fmt(mass)}"/>
-      <inertia ixx="{fmt(ixx)}" ixy="0" ixz="0" iyy="{fmt(iyy)}" iyz="0" izz="{fmt(izz)}"/>
+      <origin xyz="{center_of_mass}" rpy="0 0 0"/>
+      <mass value="{fmt(config['mass_kg'])}"/>
+      <inertia {inertia_attributes}/>
     </inertial>
   </link>
 """
@@ -138,37 +94,37 @@ def box_link(
 
 def revolute_joint(
     name: str,
-    parent: str,
-    child: str,
-    origin_z: float,
-    zero_offset_rad: float,
-    axis: str,
-    lower: float,
-    upper: float,
+    geometry: dict[str, Any],
+    limits: dict[str, float],
     effort: float,
     velocity: float,
-    comment: str,
 ) -> str:
-    origin_rpy = axis_offset_rpy(axis, zero_offset_rad)
+    origin_xyz = vector(geometry["origin_xyz"], label=f"{name}.origin_xyz")
+    origin_rpy = vector(geometry["origin_rpy"], label=f"{name}.origin_rpy")
+    axis_xyz = vector(geometry["axis_xyz"], label=f"{name}.axis_xyz")
+    axis_norm = math.sqrt(sum(float(value) ** 2 for value in geometry["axis_xyz"]))
+    if axis_norm <= 0:
+        raise ValueError(f"{name}.axis_xyz must be non-zero")
+
     return f"""
-  <!-- {comment} -->
   <joint name="{name}" type="revolute">
-    <parent link="{parent}"/>
-    <child link="{child}"/>
-    <origin xyz="0 0 {fmt(origin_z)}" rpy="{origin_rpy}"/>
-    <axis xyz="{axis}"/>
-    <limit lower="{fmt(lower)}" upper="{fmt(upper)}" effort="{fmt(effort)}" velocity="{fmt(velocity)}"/>
+    <parent link="{geometry['parent']}"/>
+    <child link="{geometry['child']}"/>
+    <origin xyz="{origin_xyz}" rpy="{origin_rpy}"/>
+    <axis xyz="{axis_xyz}"/>
+    <limit lower="{fmt(limits['lower'])}" upper="{fmt(limits['upper'])}" effort="{fmt(effort)}" velocity="{fmt(velocity)}"/>
   </joint>
 """
 
 
-def fixed_joint(name: str, parent: str, child: str, origin_z: float, comment: str) -> str:
+def fixed_camera_joint(config: dict[str, Any]) -> str:
+    origin_xyz = vector(config["origin_xyz"], label="camera_mount.origin_xyz")
+    origin_rpy = vector(config["origin_rpy"], label="camera_mount.origin_rpy")
     return f"""
-  <!-- {comment} -->
-  <joint name="{name}" type="fixed">
-    <parent link="{parent}"/>
-    <child link="{child}"/>
-    <origin xyz="0 0 {fmt(origin_z)}" rpy="0 0 0"/>
+  <joint name="camera_joint" type="fixed">
+    <parent link="{config['parent']}"/>
+    <child link="{config['child']}"/>
+    <origin xyz="{origin_xyz}" rpy="{origin_rpy}"/>
   </joint>
 """
 
@@ -177,179 +133,69 @@ def main() -> None:
     geo = yaml.safe_load(GEOMETRY_PATH.read_text(encoding="utf-8"))
     joints_cfg = yaml.safe_load(JOINTS_PATH.read_text(encoding="utf-8"))
 
-    masses = geo["masses_kg"]
-    zero_offsets = joints_cfg["simulation"]["zero_offset_rad"]
-    limits = joints_cfg["simulation"]["limits_rad"]
-    control = joints_cfg["simulation"]["control"]
-    effort = control["max_force_nm"]
-    velocity = control["max_velocity_rad_s"]
+    links = geo["links"]
+    joint_geometry = geo["joints"]
+    if tuple(links) != LINK_ORDER:
+        raise ValueError(f"CAD links must be ordered as {LINK_ORDER}")
+    if tuple(joint_geometry) != JOINT_ORDER:
+        raise ValueError(f"CAD joints must be ordered as {JOINT_ORDER}")
 
-    width = geo["link_width"]
-    turret_height = geo["shoulder_joint_height"] - geo["base_height"]
-    if turret_height <= 0:
-        raise ValueError("shoulder_joint_height must be greater than base_height")
+    simulation = joints_cfg["simulation"]
+    limits = simulation["limits_rad"]
+    control = simulation["control"]
 
-    def lim(joint: str) -> tuple[float, float]:
-        return limits[joint]["lower"], limits[joint]["upper"]
-
-    parts: list[str] = []
-    parts.append(
+    parts = [
         """<?xml version="1.0"?>
 <!--
-  Butter Finger: simplified placeholder model of the four-joint desktop arm.
+  Butter Finger CAD model.
 
   GENERATED FILE. Do not edit by hand.
-  Regenerate with: python scripts/generate_urdf.py
-  Dimension source: config/geometry.yaml
-  Joint source:     config/joints.yaml (simulation limits and zero offsets)
+  Regenerate with: python3 scripts/generate_urdf.py
 
-  MODEL ASSUMPTIONS:
-  - Primary link lengths come from a user-provided dimensioned drawing dated
-    2026-07-15; they have not been independently verified against CAD.
-  - Primitive shapes, cross-sections, masses, and inertias remain placeholders
-    and are NOT suitable for payload, structural, or servo-torque conclusions.
-  - The wrist joint axis (Y) is an UNVERIFIED assumption; verify against
-    the physical arm.
-  - Joint limits of +/- 1.5708 rad are simulation-development limits, not
-    physical calibration.
-  - The camera transform is a guess; measure it on the real arm.
-  - Load with useFixedBase=True so the base stays fixed in PyBullet.
+  Mesh frames, joint transforms, masses, and inertia tensors were exported
+  from SolidWorks with SW2URDF on 2026-07-16. The SW2URDF zero-width limits
+  were intentionally replaced with development-only simulation limits from
+  config/joints.yaml. The camera frame uses the recorded optical-center
+  transform from config/geometry.yaml; its intrinsics remain provisional.
+  Load with useFixedBase=True.
 -->
 <robot name="butter_finger">
+  <material name="cad_grey">
+    <color rgba="0.75 0.75 0.75 1"/>
+  </material>
+"""
+    ]
+
+    for link_name in LINK_ORDER:
+        parts.append(mesh_link(link_name, links[link_name]))
+
+    for joint_name in JOINT_ORDER:
+        logical_name = joint_name.removesuffix("_joint")
+        parts.append(
+            revolute_joint(
+                joint_name,
+                joint_geometry[joint_name],
+                limits[logical_name],
+                control["max_force_nm"],
+                control["max_velocity_rad_s"],
+            )
+        )
+
+    # The camera is already part of the wrist CAD mesh. Keep only a numerically
+    # negligible inertial frame, avoiding duplicate visible/collision geometry
+    # and PyBullet's 1 kg fallback for links with no inertial element.
+    parts.append(
+        """
+  <link name="camera_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.000001"/>
+      <inertia ixx="0.000000000001" ixy="0" ixz="0" iyy="0.000000000001" iyz="0" izz="0.000000000001"/>
+    </inertial>
+  </link>
 """
     )
-
-    parts.append(
-        cylinder_link(
-            "base_link",
-            geo["base_radius"],
-            geo["base_height"],
-            masses["base"],
-            "base_grey",
-            "0.25 0.25 0.25 1",
-            "base_link: fixed base cylinder (placeholder dimensions)",
-        )
-    )
-    parts.append(
-        revolute_joint(
-            "base_joint",
-            "base_link",
-            "turret_link",
-            geo["base_height"],
-            zero_offsets["base"],
-            "0 0 1",
-            *lim("base"),
-            effort,
-            velocity,
-            "base_joint: yaw about the vertical Z axis",
-        )
-    )
-    parts.append(
-        cylinder_link(
-            "turret_link",
-            geo["turret_radius"],
-            turret_height,
-            masses["turret"],
-            "turret_grey",
-            "0.45 0.45 0.45 1",
-            "turret_link: small yaw platform between base and shoulder (placeholder)",
-        )
-    )
-    parts.append(
-        revolute_joint(
-            "shoulder_joint",
-            "turret_link",
-            "upper_arm_link",
-            turret_height,
-            zero_offsets["shoulder"],
-            "0 1 0",
-            *lim("shoulder"),
-            effort,
-            velocity,
-            "shoulder_joint: pitch about the horizontal Y axis",
-        )
-    )
-    parts.append(
-        box_link(
-            "upper_arm_link",
-            width,
-            geo["upper_arm_length"],
-            masses["upper_arm"],
-            "arm_yellow",
-            "0.95 0.8 0.2 1",
-            "upper_arm_link: extends +Z from the shoulder joint",
-        )
-    )
-    parts.append(
-        revolute_joint(
-            "elbow_joint",
-            "upper_arm_link",
-            "forearm_link",
-            geo["upper_arm_length"],
-            zero_offsets["elbow"],
-            "0 1 0",
-            *lim("elbow"),
-            effort,
-            velocity,
-            "elbow_joint: pitch about a horizontal Y axis parallel to the shoulder",
-        )
-    )
-    parts.append(
-        box_link(
-            "forearm_link",
-            width,
-            geo["forearm_length"],
-            masses["forearm"],
-            "forearm_orange",
-            "0.9 0.6 0.15 1",
-            "forearm_link: extends +Z from the elbow joint",
-        )
-    )
-    parts.append(
-        revolute_joint(
-            "wrist_joint",
-            "forearm_link",
-            "wrist_link",
-            geo["forearm_length"],
-            zero_offsets["wrist"],
-            "0 1 0",
-            *lim("wrist"),
-            effort,
-            velocity,
-            "wrist_joint: TEMPORARY Y-axis assumption; verify on the physical arm",
-        )
-    )
-    parts.append(
-        box_link(
-            "wrist_link",
-            width,
-            geo["wrist_length"],
-            masses["wrist"],
-            "wrist_grey",
-            "0.45 0.45 0.45 1",
-            "wrist_link: extends +Z from the wrist joint",
-        )
-    )
-    parts.append(
-        fixed_joint(
-            "camera_joint",
-            "wrist_link",
-            "camera_link",
-            geo["wrist_length"],
-            "camera_joint: fixed mount at the wrist tip; transform is a PLACEHOLDER",
-        )
-    )
-    parts.append(
-        box_link(
-            "camera_link",
-            geo["camera_size"],
-            geo["camera_size"],
-            masses["camera"],
-            "camera_blue",
-            "0.2 0.4 0.9 1",
-            "camera_link: camera modeled as a small cube (rendering not implemented yet)",
-        )
-    )
+    parts.append(fixed_camera_joint(geo["camera_mount"]))
     parts.append("</robot>\n")
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)

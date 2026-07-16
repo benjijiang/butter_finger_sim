@@ -77,23 +77,26 @@ physical:
 # SIMULATION DATA (radians — used by PyBulletArm and the URDF generator)
 # ---------------------------------------------------------------------------
 simulation:
-  # Approximate orientation of each child link when its reported joint angle
-  # is 0 rad. Positive values follow the joint axis right-hand rule. These
-  # simulation-only offsets are not PWM-to-angle calibration.
+  # The SolidWorks-exported joint transforms define the CAD assembly pose at
+  # 0 rad, so no additional simulation orientation offsets are applied. These
+  # values are not PWM-to-angle calibration.
   zero_offset_rad:
     base: 0.0
     shoulder: 0.0
-    elbow: 0.85
-    wrist: 0.25
+    elbow: 0.0
+    wrist: 0.0
 
-  # Conservative development-only limits for joints whose true angular range
-  # is unknown. These are NOT physical calibration. Zero radians is a neutral
-  # mathematical joint coordinate, NOT a servo's electrical midpoint.
+  # Development-only simulation limits. Shoulder and elbow were updated from
+  # simulator range checks on 2026-07-16; these are NOT physical calibration.
+  # The wrist range is shifted another 0.2 rad in the negative direction. It
+  # now extends 0.5 rad past the configured -1.571 rad home position.
+  # Zero radians is a mathematical joint coordinate, NOT a servo's electrical
+  # midpoint.
   limits_rad:
     base:     {lower: -1.5708, upper: 1.5708}
-    shoulder: {lower: -1.5708, upper: 1.5708}
-    elbow:    {lower: -1.5708, upper: 1.5708}
-    wrist:    {lower: -1.5708, upper: 1.5708}
+    shoulder: {lower: -1.571, upper: 0.050}
+    elbow:    {lower: -3.075, upper: 0.065}
+    wrist:    {lower: -2.071, upper: 1.0708}
 
   # Position-control parameters (placeholders; not measured servo specs).
   control:

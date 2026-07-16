@@ -39,9 +39,9 @@ If `pip` ends up compiling PyBullet from source (no matching wheel), it also
 needs a C++ toolchain: `sudo apt install build-essential`.
 
 With an NVIDIA GPU and the proprietary driver installed, the PyBullet GUI
-uses hardware OpenGL automatically — no configuration needed. (Later, when
-the camera milestone arrives, the GPU also enables fast headless rendering
-via PyBullet's EGL plugin; nothing to set up for that yet.)
+uses hardware OpenGL automatically — no configuration needed. RGB snapshots
+currently use PyBullet's portable Tiny Renderer in both GUI and DIRECT mode;
+an EGL renderer can be added later if high-rate headless capture is needed.
 
 ## 3. Create the virtual environment and install dependencies
 
@@ -80,6 +80,7 @@ python examples/joint_sliders.py
 python examples/scripted_motion.py
 python examples/run_action.py --list
 python examples/run_action.py base_scan
+python examples/camera_snapshot.py
 ```
 
 - `view_robot.py` — displays the arm; close the PyBullet window to exit.
@@ -92,6 +93,8 @@ python examples/run_action.py base_scan
 - `run_action.py <name>` — runs one action from `config/actions.yaml` in the
   GUI; available names include `home`, `demo_reach`, `base_scan`,
   `reach_and_return`, `wrist_up`, and `wrist_down`.
+- `camera_snapshot.py` — renders the wrist camera in DIRECT mode and writes
+  `camera_snapshot.png`; add `--gui` to open PyBullet during capture.
 - There is also `python examples/go_home.py`, which moves the arm to the
   simulated reference pose.
 
@@ -99,6 +102,11 @@ The named actions use temporary radians and are not approved for the physical
 PWM-controlled arm. A timed simulator move uses smoothstep interpolation at
 the configured 240 Hz control rate; slider updates omit the duration and
 remain non-blocking.
+
+The camera renders natively at `640×480`, then rotates the RGB frame 90°
+clockwise to a `480×640` portrait image. Its `120°` vertical FOV is a temporary
+pinhole approximation; exact intrinsics and wide-angle distortion still need
+physical checkerboard calibration.
 
 ## 6. Deactivate / reactivate the environment
 
@@ -129,4 +137,5 @@ command-line developer tools with `xcode-select --install`, and retry inside
 | `URDF not found...` | Run `python scripts/generate_urdf.py` |
 | GUI window never appears | You are in an SSH session; use a local terminal on the machine's own display |
 | GUI fails with OpenGL/GLX errors (Linux) | Install `libgl1` and `mesa-utils`; on NVIDIA, check `nvidia-smi` shows the driver |
+| Camera snapshot is empty or points the wrong way | Confirm `config/geometry.yaml` camera offset and the `+Y` forward / `-X` native-up convention |
 | `pip install pybullet` compile error | Upgrade pip/setuptools/wheel; Linux: install `build-essential python3-dev`; Mac: `xcode-select --install`; retry inside `.venv` |

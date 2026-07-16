@@ -30,9 +30,11 @@ from butter_finger.config import (
     ActionStep,
     ArmAction,
     ArmConfig,
+    CameraConfig,
     PhysicalConfig,
     load_action_config,
     load_arm_config,
+    load_camera_config,
     load_physical_config,
 )
 
@@ -44,6 +46,7 @@ __all__ = [
     "ArmAction",
     "ArmConfig",
     "BackendUnavailableError",
+    "CameraConfig",
     "JOINT_NAMES",
     "JointLimitError",
     "PWMRobotArm",
@@ -54,5 +57,6 @@ __all__ = [
     "UnknownJointError",
     "load_action_config",
     "load_arm_config",
+    "load_camera_config",
     "load_physical_config",
 ]

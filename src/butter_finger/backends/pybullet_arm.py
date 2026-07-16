@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import math
 import time
-from collections.abc import Mapping
 from collections.abc import Iterator
+from collections.abc import Mapping
 from pathlib import Path
+
+import numpy as np
 
 from butter_finger.arm import (
     ArmBackend,
@@ -18,11 +20,14 @@ from butter_finger.arm import (
     JointLimitError,
     UnknownJointError,
 )
+from butter_finger.camera import camera_view_geometry, rotate_rgb_clockwise
 from butter_finger.config import (
     URDF_JOINT_NAMES,
     URDF_PATH,
     ArmConfig,
+    CameraConfig,
     load_arm_config,
+    load_camera_config,
 )
 
 _MISSING_PYBULLET_MSG = (
@@ -87,8 +92,12 @@ class PyBulletArm(ArmBackend):
         gui: bool = True,
         urdf_path: Path | str | None = None,
         config: ArmConfig | None = None,
+        camera_config: CameraConfig | None = None,
     ) -> None:
         self._config = config if config is not None else load_arm_config()
+        self._camera_config = (
+            camera_config if camera_config is not None else load_camera_config()
+        )
         self._urdf_path = Path(urdf_path) if urdf_path is not None else URDF_PATH
         self._pb = _import_pybullet()
         self._client: int | None = None
@@ -118,10 +127,20 @@ class PyBulletArm(ArmBackend):
         self._pb.setRealTimeSimulation(0, physicsClientId=client)
 
         self._plane_id = self._pb.loadURDF("plane.urdf", physicsClientId=client)
+        self_collision_flags = (
+            self._pb.URDF_USE_SELF_COLLISION
+            | self._pb.URDF_USE_SELF_COLLISION_EXCLUDE_PARENT
+        )
         self._robot_id = self._pb.loadURDF(
-            str(self._urdf_path), useFixedBase=True, physicsClientId=client
+            str(self._urdf_path),
+            useFixedBase=True,
+            flags=self_collision_flags,
+            physicsClientId=client,
         )
         self._joint_indices = self._discover_joints()
+        self._camera_link_index = self._discover_link_index(
+            self._camera_config.link_name
+        )
 
     # ------------------------------------------------------------------
     # Introspection helpers (used by the examples)
@@ -145,6 +164,10 @@ class PyBulletArm(ArmBackend):
     @property
     def config(self) -> ArmConfig:
         return self._config
+
+    @property
+    def camera_config(self) -> CameraConfig:
+        return self._camera_config
 
     @property
     def time_step_s(self) -> float:
@@ -182,6 +205,24 @@ class PyBulletArm(ArmBackend):
                 "'python scripts/generate_urdf.py'."
             )
         return indices
+
+    def _discover_link_index(self, link_name: str) -> int:
+        """Find a URDF child-link index by its stable link name."""
+        for index in range(
+            self._pb.getNumJoints(self._robot_id, physicsClientId=self._client)
+        ):
+            info = self._pb.getJointInfo(
+                self._robot_id, index, physicsClientId=self._client
+            )
+            raw_name = info[12]
+            found_name = (
+                raw_name.decode("utf-8") if isinstance(raw_name, bytes) else str(raw_name)
+            )
+            if found_name == link_name:
+                return index
+        raise RuntimeError(
+            f"URDF {self._urdf_path} is missing camera link {link_name!r}"
+        )
 
     def _validate(self, joint: str, position_rad: float) -> None:
         if joint not in self._joint_indices:
@@ -279,6 +320,72 @@ class PyBulletArm(ArmBackend):
             )[0]
             for joint, index in self._joint_indices.items()
         }
+
+    def capture_rgb(self) -> np.ndarray:
+        """Capture the current camera_link view as a rotated uint8 RGB image."""
+        state = self._pb.getLinkState(
+            self._robot_id,
+            self._camera_link_index,
+            computeForwardKinematics=1,
+            physicsClientId=self._client,
+        )
+        if state is None or len(state) < 6:
+            raise RuntimeError("PyBullet did not return a valid camera link state")
+
+        eye, target, up = camera_view_geometry(
+            state[4],
+            state[5],
+            self._camera_config.forward_xyz,
+            self._camera_config.up_xyz,
+        )
+        view_matrix = self._pb.computeViewMatrix(
+            cameraEyePosition=eye,
+            cameraTargetPosition=target,
+            cameraUpVector=up,
+        )
+        projection_matrix = self._pb.computeProjectionMatrixFOV(
+            fov=self._camera_config.vertical_fov_deg,
+            aspect=self._camera_config.native_aspect_ratio,
+            nearVal=self._camera_config.near_plane_m,
+            farVal=self._camera_config.far_plane_m,
+        )
+        image = self._pb.getCameraImage(
+            width=self._camera_config.native_width,
+            height=self._camera_config.native_height,
+            viewMatrix=view_matrix,
+            projectionMatrix=projection_matrix,
+            renderer=self._pb.ER_TINY_RENDERER,
+            physicsClientId=self._client,
+        )
+
+        rgba = np.asarray(image[2], dtype=np.uint8)
+        expected_values = (
+            self._camera_config.native_width
+            * self._camera_config.native_height
+            * 4
+        )
+        if rgba.size != expected_values:
+            raise RuntimeError(
+                "PyBullet returned an unexpected RGBA buffer size: "
+                f"{rgba.size}, expected {expected_values}"
+            )
+        rgba = rgba.reshape(
+            (
+                self._camera_config.native_height,
+                self._camera_config.native_width,
+                4,
+            )
+        )
+        rgb = rotate_rgb_clockwise(
+            rgba[:, :, :3],
+            self._camera_config.rotate_clockwise_deg,
+        )
+        if rgb.shape != self._camera_config.output_shape:
+            raise RuntimeError(
+                f"Rotated RGB shape {rgb.shape} does not match configured "
+                f"shape {self._camera_config.output_shape}"
+            )
+        return rgb
 
     def go_home(self, settle_time_s: float = 2.0) -> None:
         """Move to the configured simulated reference pose ('sim_home')."""

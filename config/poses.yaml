@@ -4,22 +4,22 @@
 #
 # IMPORTANT: these poses are NOT derived from the recorded physical home PWM
 # values in config/joints.yaml. No measured PWM-to-angle calibration exists,
-# so no conversion is performed. Zero radians is a neutral mathematical
-# reference pose for simulation development only.
+# so no conversion is performed. Values use the simulation coordinates and
+# zero offsets configured in config/joints.yaml.
 
 poses:
-  # Neutral simulated reference pose. Link orientations at 0 rad include the
-  # simulation-only zero offsets configured in config/joints.yaml.
+  # Simulated home pose. Wrist keeps the old coordinate's -1.571 rad absolute
+  # position; its activity range extends 0.5 rad farther in the negative direction.
   sim_home:
     base: 0.0
     shoulder: 0.0
     elbow: 0.0
-    wrist: 0.0
+    wrist: -1.571
 
   # Arbitrary demo pose used by examples/scripted_motion.py.
-  # Values are within the temporary simulation limits (+/- 1.5708 rad).
+  # Values are within the configured simulation limits.
   demo_reach:
     base: 0.8
-    shoulder: 0.6
+    shoulder: -0.6
     elbow: -0.9
     wrist: 0.4

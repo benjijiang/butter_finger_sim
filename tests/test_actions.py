@@ -117,11 +117,11 @@ def test_loads_expected_actions_and_resolves_poses() -> None:
         "base": 0.0,
         "shoulder": 0.0,
         "elbow": 0.0,
-        "wrist": 0.0,
+        "wrist": -1.571,
     }
     assert dict(config.actions["demo_reach"].steps[0].targets_rad) == {
         "base": 0.8,
-        "shoulder": 0.6,
+        "shoulder": -0.6,
         "elbow": -0.9,
         "wrist": 0.4,
     }
