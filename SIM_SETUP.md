@@ -79,7 +79,10 @@ python examples/view_robot.py
 python examples/joint_sliders.py
 python examples/scripted_motion.py
 python examples/run_action.py --list
-python examples/run_action.py base_scan
+python examples/run_action.py happy
+python examples/idle_motion.py
+python examples/emotion_showcase.py happy curious sad surprised
+python examples/emotion_showcase.py --all
 python examples/camera_snapshot.py
 ```
 
@@ -91,17 +94,24 @@ python examples/camera_snapshot.py
 - `run_action.py --list` — lists the validated, config-driven simulation
   actions without opening PyBullet.
 - `run_action.py <name>` — runs one action from `config/actions.yaml` in the
-  GUI; available names include `home`, `demo_reach`, `base_scan`,
-  `reach_and_return`, `wrist_up`, and `wrist_down`.
+  GUI. In addition to the utility actions, twenty camera-as-face gestures cover
+  greeting, agreement, positive, reflective, low-energy, and reactive moods.
+- `idle_motion.py` — continuously runs the slow no-person base scan around the
+  `idle_ready` posture. A future attention layer will replace it with camera
+  tracking whenever a person is detected.
+- `emotion_showcase.py` — plays selected emotional actions in order, or all
+  twenty with `--all`, with a short idle scan between actions.
 - `camera_snapshot.py` — renders the wrist camera in DIRECT mode and writes
   `camera_snapshot.png`; add `--gui` to open PyBullet during capture.
 - There is also `python examples/go_home.py`, which moves the arm to the
   simulated reference pose.
 
-The named actions use temporary radians and are not approved for the physical
-PWM-controlled arm. A timed simulator move uses smoothstep interpolation at
-the configured 240 Hz control rate; slider updates omit the duration and
-remain non-blocking.
+The named actions and idle scan use temporary radians and are not approved for
+the physical PWM-controlled arm. Emotional `duration_s` values are intentional:
+short steps communicate surprise, fear, excitement, or force, while long steps
+communicate affection, thought, sadness, or fatigue. A timed simulator move
+uses smoothstep interpolation at the configured 240 Hz control rate; idle and
+slider target updates omit the duration and remain non-blocking.
 
 The camera renders natively at `640×480`, then rotates the RGB frame 90°
 clockwise to a `480×640` portrait image. Its `120°` vertical FOV is a temporary

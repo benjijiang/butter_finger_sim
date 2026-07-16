@@ -92,6 +92,14 @@ native `640x480 @ 30 FPS` YUYV stream metadata and simulation-only projection.
 PyBullet renders RGB at the native size and rotates it clockwise to `480x640`.
 The current 120-degree vertical FOV and pinhole model are provisional.
 
+`idle_ready` is the conversational hand-off pose
+`[base=0.0, shoulder=-0.3, elbow=-0.5, wrist=-1.0]` rad. Twenty
+simulation-only emotional actions begin and end there. Their per-step
+`duration_s` values are an intentional part of the expression: short motion
+reads as alert/forceful and long motion reads as gentle/reflective/tired.
+`config/idle.yaml` defines the no-person fallback base scan; it is not person
+tracking and contains no physical calibration.
+
 ## Architectural rules
 
 1. Simulation-facing application code uses **radians only**, through the
@@ -107,10 +115,11 @@ The current 120-degree vertical FOV and pinhole model are provisional.
 3. `RaspberryPiArm` (radians) stays a `NotImplementedError` stub until
    measured PWM-to-angle calibration exists for every joint; it will then be
    built on top of the PWM layer.
-4. Keep the six config concepts separate (see `config/joints.yaml` header):
+4. Keep the configuration concepts separate (see `config/joints.yaml` header):
    sim radians, recorded PWM, verified hardware limits, temporary sim limits,
-   named poses, and named action sequences. `config/actions.yaml` is
-   simulation-only until calibration and explicit real-machine approval.
+   named poses, named action sequences, simulation idle behavior, and camera
+   rendering. `config/actions.yaml` and `config/idle.yaml` are simulation-only
+   until calibration and explicit real-machine approval.
 5. URDF joint names are fixed: `base_joint`, `shoulder_joint`,
    `elbow_joint`, `wrist_joint`, plus fixed `camera_link`. Never rename.
 6. CAD link names from the export are mapped onto the fixed repository names;
@@ -123,6 +132,10 @@ The current 120-degree vertical FOV and pinhole model are provisional.
 8. Camera rendering is a simulation-only `PyBulletArm.capture_rgb()` capability
    and does not extend `ArmBackend` or either real-hardware backend. Camera
    parameters live in `config/camera.yaml`, separate from joint/control data.
+9. `IdleController` is a non-blocking no-person fallback. A future attention
+   layer pauses idle while it commands person-follow targets, then calls
+   `resume()` when tracking ends. Perception and chat-to-action intent mapping
+   remain outside `ArmBackend`, `ActionRunner`, and the action YAML.
 
 ## Safety rules
 
@@ -153,8 +166,10 @@ simplified convex meshes. Joint names and the control API must not change.
 - [x] First run on the Linux sim machine: `pytest` green, sliders working
       (see SIM_SETUP.md).
 - [x] Add validated config-driven simulation actions and optional timed
-      `ArmBackend` moves (`home`, `demo_reach`, `base_scan`,
-      `reach_and_return`, `wrist_up`, `wrist_down`).
+      `ArmBackend` moves: six utility actions plus 20 duration-designed
+      conversational emotional gestures.
+- [x] Add a non-blocking simulation-only idle scan around `idle_ready`, plus
+      selected/all emotional-action showcase tooling (2026-07-16).
 - [x] Recover the SolidWorks CAD and replace primitives with exported meshes,
  joint transforms, and inertial properties (2026-07-16).
 - [ ] Verify CAD transforms and mass properties against the physical arm;

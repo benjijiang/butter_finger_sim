@@ -16,7 +16,8 @@ RasAdapter5A V1.0 servo controller over UART.
 - A four-joint revolute arm rendered from SolidWorks CAD meshes.
 - Interactive GUI control with one slider per joint.
 - Smooth scripted motion using smoothstep interpolation.
-- Config-driven named actions with validated targets and durations.
+- Config-driven utility and emotional actions with deliberately expressive timing.
+- A non-blocking no-person idle scan, ready for future tracking hand-off.
 - Position control with gravity, a fixed 1/240 s time step, and deterministic
   stepping.
 - RGB rendering from a wrist-mounted `camera_link`.
@@ -51,6 +52,7 @@ butter-finger-sim/
 │   ├── joints.yaml          # PWM ports, recorded PWM data, simulation limits
 │   ├── poses.yaml           # named simulation poses in radians
 │   ├── actions.yaml         # named simulation action sequences in radians
+│   ├── idle.yaml            # simulation-only no-person scan behavior
 │   └── camera.yaml          # camera stream metadata and simulation projection
 ├── models/
 │   ├── meshes/                      # SolidWorks-exported link meshes
@@ -60,6 +62,7 @@ butter-finger-sim/
 ├── src/butter_finger/
 │   ├── arm.py               # ArmBackend abstract interface (radians only)
 │   ├── actions.py           # backend-neutral named-action scheduler
+│   ├── idle.py              # non-blocking fallback idle scan
 │   ├── camera.py            # optical-frame math and RGB rotation
 │   ├── config.py            # YAML config loader (sim + physical sections)
 │   └── backends/
@@ -72,6 +75,8 @@ butter-finger-sim/
 │   ├── go_home.py           # move to the simulated reference pose
 │   ├── scripted_motion.py   # smoothstep motion sequence
 │   ├── run_action.py        # list/run configured simulation actions
+│   ├── idle_motion.py       # continuous slow no-person scan
+│   ├── emotion_showcase.py  # play selected/all emotional actions
 │   ├── camera_snapshot.py   # render one simulated RGB frame
 │   ├── pi_test_pose.py      # REAL HARDWARE: joint-by-joint home-pose test
 │   └── pi_sweep_base.py     # REAL HARDWARE: base sweep around home
@@ -125,14 +130,48 @@ targets for selected joints. List and run them with:
 ```bash
 python examples/run_action.py --list
 python examples/run_action.py base_scan
-python examples/run_action.py reach_and_return
+python examples/run_action.py happy
+python examples/emotion_showcase.py happy curious sad surprised
+python examples/emotion_showcase.py --all
 ```
 
-The configured actions are `home`, `demo_reach`, `base_scan`,
-`reach_and_return`, `wrist_up`, and `wrist_down`. `ActionRunner` schedules
-their steps through `ArmBackend`; `PyBulletArm` currently supplies the only
-working radians backend. These action values are temporary simulation data,
-not hardware-approved commands, and cannot be sent to `PWMRobotArm`.
+The original utility actions remain: `home`, `demo_reach`, `base_scan`,
+`reach_and_return`, `wrist_up`, and `wrist_down`. Twenty conversational
+actions treat the wrist camera as the robot's face:
+
+- Social: `greet`, `nod_yes`, `shake_no`, `attentive`
+- Positive: `happy`, `excited`, `proud`, `playful`, `affectionate`, `shy`
+- Reflective: `curious`, `thinking`, `confused`
+- Low-energy: `sad`, `disappointed`, `bored`, `sleepy`
+- Reactive: `surprised`, `scared`, `angry`
+
+The emotional actions begin and end at `idle_ready`, not `sim_home`.
+`duration_s` is deliberately designed per step: fast motion conveys surprise,
+fear, excitement, or force; slow motion conveys affection, thought, sadness,
+or fatigue. Repeated identical targets create expressive holds while still
+advancing simulation. These timings are simulator choreography, not measured
+servo performance.
+
+`ActionRunner` schedules each finite action through `ArmBackend`.
+`emotion_showcase.py` keeps one GUI open while playing either a supplied list
+or all twenty actions, with a short idle interval between them.
+
+## Simulation idle behavior
+
+`IdleController` reads `config/idle.yaml` and sends non-blocking targets for a
+slow triangle-wave base scan around the full `idle_ready` posture:
+
+```bash
+python examples/idle_motion.py
+```
+
+This is only the no-person fallback. A future attention layer will stop
+calling `IdleController.update()` while a person is detected, command tracking
+targets from camera perception, then call `resume()` when the person is lost.
+Perception remains outside `ArmBackend`.
+
+All action and idle values are temporary simulation data. They are not
+hardware-approved commands and cannot be sent to `PWMRobotArm`.
 
 ## Simulated RGB camera
 
@@ -205,7 +244,9 @@ python scripts/generate_urdf.py
 python -m pytest
 python examples/joint_sliders.py
 python examples/run_action.py --list
-python examples/run_action.py base_scan
+python examples/run_action.py happy
+python examples/idle_motion.py
+python examples/emotion_showcase.py happy curious sad surprised
 python examples/camera_snapshot.py
 ```
 

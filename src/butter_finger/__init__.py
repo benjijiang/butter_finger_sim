@@ -31,12 +31,15 @@ from butter_finger.config import (
     ArmAction,
     ArmConfig,
     CameraConfig,
+    IdleConfig,
     PhysicalConfig,
     load_action_config,
     load_arm_config,
     load_camera_config,
+    load_idle_config,
     load_physical_config,
 )
+from butter_finger.idle import IdleController
 
 __all__ = [
     "ActionConfig",
@@ -47,6 +50,8 @@ __all__ = [
     "ArmConfig",
     "BackendUnavailableError",
     "CameraConfig",
+    "IdleConfig",
+    "IdleController",
     "JOINT_NAMES",
     "JointLimitError",
     "PWMRobotArm",
@@ -58,5 +63,6 @@ __all__ = [
     "load_action_config",
     "load_arm_config",
     "load_camera_config",
+    "load_idle_config",
     "load_physical_config",
 ]

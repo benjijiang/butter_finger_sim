@@ -23,3 +23,56 @@ poses:
     shoulder: -0.6
     elbow: -0.9
     wrist: 0.4
+
+  # Neutral hand-off posture for conversational behavior. Emotional actions
+  # begin and end here; the dynamic idle controller then resumes its slow base
+  # scan. This is intentionally distinct from the CAD assembly's sim_home.
+  idle_ready:
+    base: 0.0
+    shoulder: -0.3
+    elbow: -0.5
+    wrist: -1.0
+
+  # Reusable full-body keyframes for simulation-only emotional motion.
+  # Their names describe expressive intent, not physically validated poses.
+  emotion_upright:
+    base: 0.0
+    shoulder: -0.55
+    elbow: -0.75
+    wrist: -0.9
+
+  emotion_engaged:
+    base: 0.0
+    shoulder: -0.4
+    elbow: -0.7
+    wrist: -0.8
+
+  emotion_recoil:
+    base: 0.0
+    shoulder: -0.8
+    elbow: -1.35
+    wrist: -0.7
+
+  emotion_droop:
+    base: 0.0
+    shoulder: -0.12
+    elbow: -0.25
+    wrist: -1.85
+
+  emotion_look_up:
+    base: 0.0
+    shoulder: -0.3
+    elbow: -0.5
+    wrist: -0.35
+
+  emotion_guarded:
+    base: 0.0
+    shoulder: -0.72
+    elbow: -1.15
+    wrist: -1.35
+
+  emotion_angry:
+    base: 0.0
+    shoulder: -0.2
+    elbow: -0.65
+    wrist: -1.45

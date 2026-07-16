@@ -2,8 +2,8 @@
 
 Keeps the configuration concepts separate (see config/joints.yaml):
 simulation radians, recorded physical PWM microseconds, verified hardware
-limits, temporary simulation limits, named poses, named actions, and
-simulation-only camera rendering.
+limits, temporary simulation limits, named poses, named actions,
+simulation-only idle behavior, and simulation-only camera rendering.
 """
 from __future__ import annotations
 
@@ -140,6 +140,22 @@ class ActionConfig:
     @property
     def action_names(self) -> tuple[str, ...]:
         return tuple(self.actions)
+
+
+@dataclass(frozen=True)
+class IdleConfig:
+    """Validated simulation-only fallback motion when nobody is tracked."""
+
+    pose_name: str
+    pose_rad: Mapping[str, float]
+    scan_joint: str
+    lower_rad: float
+    upper_rad: float
+    half_cycle_s: float
+
+    @property
+    def scan_speed_rad_s(self) -> float:
+        return (self.upper_rad - self.lower_rad) / self.half_cycle_s
 
 
 def _load_yaml(path: Path) -> Any:
@@ -407,6 +423,77 @@ def load_action_config(
         )
 
     return ActionConfig(actions=MappingProxyType(actions))
+
+
+def load_idle_config(
+    config_dir: Path = CONFIG_DIR,
+    arm_config: ArmConfig | None = None,
+) -> IdleConfig:
+    """Load the simulation-only fallback idle scan configuration."""
+    arm_config = arm_config if arm_config is not None else load_arm_config(config_dir)
+    idle_cfg = _load_yaml(config_dir / "idle.yaml")
+    if not isinstance(idle_cfg, dict) or not isinstance(idle_cfg.get("idle"), dict):
+        raise ValueError("idle.yaml must contain an 'idle' mapping")
+    if set(idle_cfg) != {"idle"}:
+        raise ValueError("idle.yaml must contain only the 'idle' section")
+
+    idle_raw = idle_cfg["idle"]
+    expected_keys = {
+        "pose",
+        "scan_joint",
+        "lower_rad",
+        "upper_rad",
+        "half_cycle_s",
+    }
+    unknown_keys = set(idle_raw) - expected_keys
+    missing_keys = expected_keys - set(idle_raw)
+    if unknown_keys:
+        raise ValueError(f"idle configuration has unknown keys {sorted(unknown_keys)}")
+    if missing_keys:
+        raise ValueError(f"idle configuration is missing keys {sorted(missing_keys)}")
+
+    pose_name = _nonempty_string(idle_raw["pose"], "idle.pose")
+    if pose_name not in arm_config.poses:
+        raise ValueError(f"idle.pose references unknown pose {pose_name!r}")
+    pose = dict(arm_config.poses[pose_name])
+    if set(pose) != set(arm_config.joint_order):
+        raise ValueError(
+            f"idle pose {pose_name!r} must define every joint "
+            f"{list(arm_config.joint_order)}"
+        )
+
+    scan_joint = _nonempty_string(idle_raw["scan_joint"], "idle.scan_joint")
+    if scan_joint not in arm_config.sim_limits:
+        raise ValueError(f"idle.scan_joint references unknown joint {scan_joint!r}")
+
+    lower_rad = _finite_float(idle_raw["lower_rad"], "idle.lower_rad")
+    upper_rad = _finite_float(idle_raw["upper_rad"], "idle.upper_rad")
+    if lower_rad >= upper_rad:
+        raise ValueError("idle scan range must satisfy lower_rad < upper_rad")
+    limits = arm_config.sim_limits[scan_joint]
+    if not limits.contains(lower_rad) or not limits.contains(upper_rad):
+        raise ValueError(
+            f"idle scan range [{lower_rad}, {upper_rad}] rad is outside the "
+            f"simulation limits for {scan_joint!r}"
+        )
+    if not lower_rad <= pose[scan_joint] <= upper_rad:
+        raise ValueError(
+            f"idle pose {pose_name!r} puts scan joint {scan_joint!r} outside "
+            "the configured idle scan range"
+        )
+
+    half_cycle_s = _finite_float(idle_raw["half_cycle_s"], "idle.half_cycle_s")
+    if half_cycle_s <= 0:
+        raise ValueError("idle.half_cycle_s must be greater than zero")
+
+    return IdleConfig(
+        pose_name=pose_name,
+        pose_rad=MappingProxyType(pose),
+        scan_joint=scan_joint,
+        lower_rad=lower_rad,
+        upper_rad=upper_rad,
+        half_cycle_s=half_cycle_s,
+    )
 
 
 def load_physical_config(config_dir: Path = CONFIG_DIR) -> PhysicalConfig:

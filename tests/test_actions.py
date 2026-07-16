@@ -24,7 +24,29 @@ EXPECTED_ACTIONS = (
     "reach_and_return",
     "wrist_up",
     "wrist_down",
+    "greet",
+    "nod_yes",
+    "shake_no",
+    "attentive",
+    "happy",
+    "excited",
+    "proud",
+    "playful",
+    "affectionate",
+    "shy",
+    "curious",
+    "thinking",
+    "confused",
+    "sad",
+    "disappointed",
+    "bored",
+    "sleepy",
+    "surprised",
+    "scared",
+    "angry",
 )
+
+EMOTION_ACTIONS = EXPECTED_ACTIONS[6:]
 
 
 class FakeArm(ArmBackend):
@@ -139,6 +161,46 @@ def test_configured_development_action_values() -> None:
     assert actions["wrist_up"].steps[0].targets_rad["wrist"] == 0.6
     assert actions["wrist_down"].steps[0].targets_rad["wrist"] == -0.6
     assert len(actions["reach_and_return"].steps) == 3
+
+
+def test_emotional_actions_begin_and_end_at_idle_ready() -> None:
+    config = load_action_config()
+    idle_ready = load_arm_config().poses["idle_ready"]
+
+    assert len(EMOTION_ACTIONS) == 20
+    for name in EMOTION_ACTIONS:
+        action = config.actions[name]
+        assert dict(action.steps[0].targets_rad) == idle_ready, name
+        assert dict(action.steps[-1].targets_rad) == idle_ready, name
+
+
+def test_emotional_action_targets_stay_within_simulation_limits() -> None:
+    arm_config = load_arm_config()
+    actions = load_action_config(arm_config=arm_config).actions
+
+    for name in EMOTION_ACTIONS:
+        for step in actions[name].steps:
+            for joint, angle in step.targets_rad.items():
+                assert arm_config.sim_limits[joint].contains(angle), (name, joint, angle)
+
+
+def test_emotional_actions_have_distinct_timing_signatures() -> None:
+    actions = load_action_config().actions
+
+    assert actions["surprised"].steps[1].duration_s < 0.35
+    assert min(step.duration_s for step in actions["scared"].steps) <= 0.1
+    assert max(step.duration_s for step in actions["thinking"].steps) >= 2.0
+    assert max(step.duration_s for step in actions["sad"].steps) >= 2.5
+
+    confused = actions["confused"].steps
+    assert confused[1].duration_s != confused[3].duration_s
+
+    sleepy_droops = (
+        actions["sleepy"].steps[1].duration_s,
+        actions["sleepy"].steps[3].duration_s,
+        actions["sleepy"].steps[5].duration_s,
+    )
+    assert sleepy_droops == tuple(sorted(sleepy_droops))
 
 
 def test_loaded_action_mappings_are_immutable() -> None:

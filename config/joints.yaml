@@ -1,6 +1,6 @@
 # Butter Finger — joint configuration
 #
-# This project deliberately separates SIX different concepts. Never mix them:
+# This project deliberately separates these configuration concepts. Never mix:
 #
 #   1. Simulation joint positions ....... radians (see config/poses.yaml)
 #   2. Recorded physical PWM data ....... microseconds (historical, below)
@@ -8,6 +8,7 @@
 #   4. Temporary simulation limits ...... radians (development-only, below)
 #   5. Named poses ...................... config/poses.yaml
 #   6. Named action sequences ........... config/actions.yaml (sim-only)
+#   7. Dynamic idle behavior ............ config/idle.yaml (sim-only)
 #
 # There is NO PWM-to-angle conversion anywhere in this repository yet,
 # because no measured angle calibration exists. Do not invent one.
