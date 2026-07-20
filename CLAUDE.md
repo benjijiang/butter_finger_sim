@@ -101,8 +101,12 @@ The current 120-degree vertical FOV and pinhole model are provisional.
 calibrated-radian emotional actions begin and end there. Their per-step
 `duration_s` values are an intentional part of the expression: short motion
 reads as alert/forceful and long motion reads as gentle/reflective/tired.
-`config/idle.yaml` defines the no-person fallback base scan; it is not person
-tracking and remains simulation-only as a continuously streamed controller.
+`config/idle.yaml` defines the no-person fallback base scan; it now sweeps the
+full base range (±1.5708 rad, ±90°) so a lost face can be reacquired anywhere
+in yaw, and remains simulation-only as a continuously streamed controller. The
+simulation-only `perception` package (face detection, a 3-DOF visual-servo
+`FaceTracker`, and the `FaceFollower` attention layer) uses `config/tracking.yaml`
+and drives `PyBulletArm`; it is what hands off to and from the idle scan.
 
 ## Architectural rules
 
@@ -123,8 +127,10 @@ tracking and remains simulation-only as a continuously streamed controller.
 4. Keep the configuration concepts separate (see `config/joints.yaml` header):
    calibrated radians, measured radians/PWM endpoints, recorded home PWM,
    verified hardware limits, named poses/actions, simulation idle behavior,
-   and camera rendering. Named actions may use either backend; continuous
-   `config/idle.yaml` control remains simulation-only.
+   camera rendering, and simulation-only face-tracking control
+   (`config/tracking.yaml`, loaded by `perception/config.py`). Named actions
+   may use either backend; continuous `config/idle.yaml` and `config/tracking.yaml`
+   control remains simulation-only.
 5. URDF joint names are fixed: `base_joint`, `shoulder_joint`,
    `elbow_joint`, `wrist_joint`, plus fixed `camera_link`. Never rename.
 6. CAD link names from the export are mapped onto the fixed repository names;
@@ -136,10 +142,14 @@ tracking and remains simulation-only as a continuously streamed controller.
 8. Camera rendering is a simulation-only `PyBulletArm.capture_rgb()` capability
    and does not extend `ArmBackend` or either real-hardware backend. Camera
    parameters live in `config/camera.yaml`, separate from joint/control data.
-9. `IdleController` is a non-blocking no-person fallback. A future attention
-   layer pauses idle while it commands person-follow targets, then calls
-   `resume()` when tracking ends. Perception and chat-to-action intent mapping
-   remain outside `ArmBackend`, `ActionRunner`, and the action YAML.
+9. `IdleController` is a non-blocking no-person fallback. The `perception`
+   package's `FaceFollower` is the attention layer that pairs with it: it drives
+   `FaceTracker` while a face is visible and, after a short grace period without
+   one, calls `IdleController` (`resume()` then `update()`) to scan for a face.
+   `perception` is a simulation-only layer on top of the radians `ArmBackend`
+   (it drives `PyBulletArm` and calls `capture_rgb()`); it does not extend
+   `ArmBackend` or touch the real-hardware backends. Chat-to-action intent
+   mapping still lives outside `ArmBackend`, `ActionRunner`, and the action YAML.
 
 ## Safety rules
 
@@ -184,3 +194,9 @@ simplified convex meshes. Joint names and the control API must not change.
       and sim/real action CLI switching (2026-07-16).
 - [x] Camera RGB rendering from `camera_link` with provisional pinhole
       intrinsics; physical checkerboard calibration remains.
+- [x] Add simulation-only camera face tracking (2026-07-21): `perception`
+      package (Haar + scripted detection, webcam/sim image sources, a 3-DOF
+      visual-servo `FaceTracker`) and a `FaceFollower` attention layer that
+      hands off to the full-range idle scan when no face is visible. Gains and
+      response signs are unverified sim-tuning knobs (`config/tracking.yaml`);
+      a real-hardware follow path remains.

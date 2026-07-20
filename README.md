@@ -17,10 +17,12 @@ RasAdapter5A V1.0 servo controller over UART.
 - Interactive GUI control with one slider per joint.
 - Smooth scripted motion using smoothstep interpolation.
 - Config-driven utility and emotional actions with deliberately expressive timing.
-- A non-blocking no-person idle scan, ready for future tracking hand-off.
 - Position control with gravity, a fixed 1/240 s time step, and deterministic
   stepping.
 - RGB rendering from a wrist-mounted `camera_link`.
+- Camera face tracking (simulation-only): follow a face with the base (pan),
+  wrist (tilt), and shoulder (stand-off), handing off to a full-range base
+  idle scan when no face is visible and reacquiring when one reappears.
 
 ## CAD geometry
 
@@ -54,7 +56,8 @@ butter-finger-sim/
 │   ├── poses.yaml           # named poses in calibrated radians
 │   ├── actions.yaml         # named action sequences in calibrated radians
 │   ├── idle.yaml            # simulation-only no-person scan behavior
-│   └── camera.yaml          # camera stream metadata and simulation projection
+│   ├── camera.yaml          # camera stream metadata and simulation projection
+│   └── tracking.yaml        # simulation-only face-tracking control knobs
 ├── models/
 │   ├── meshes/                      # SolidWorks-exported link meshes
 │   └── butter_finger_simple.urdf   # GENERATED from config/ — do not hand-edit
@@ -66,6 +69,12 @@ butter-finger-sim/
 │   ├── idle.py              # non-blocking fallback idle scan
 │   ├── camera.py            # optical-frame math and RGB rotation
 │   ├── config.py            # YAML config loader (sim + physical sections)
+│   ├── perception/          # simulation-only camera face tracking
+│   │   ├── detection.py         # face detectors (Haar + scripted)
+│   │   ├── sources.py           # image sources (webcam + sim camera)
+│   │   ├── tracker.py           # 3-DOF visual-servo control law
+│   │   ├── attention.py         # FaceFollower: track <-> idle-scan hand-off
+│   │   └── config.py            # tracking.yaml loader
 │   └── backends/
 │       ├── pybullet_arm.py      # simulation backend (runs on the sim machine)
 │       ├── pwm_robot_arm.py     # REAL hardware, PWM microseconds (Raspberry Pi)
@@ -79,6 +88,7 @@ butter-finger-sim/
 │   ├── idle_motion.py       # continuous slow no-person scan
 │   ├── emotion_showcase.py  # play emotions with sim or real backend
 │   ├── camera_snapshot.py   # render one simulated RGB frame
+│   ├── face_tracking.py     # camera face tracking (webcam or sim camera)
 │   ├── pi_test_pose.py      # REAL HARDWARE: joint-by-joint home-pose test
 │   └── pi_sweep_base.py     # REAL HARDWARE: base sweep around home
 ├── tests/                   # dependency-light; none require PyBullet or hardware
@@ -182,10 +192,13 @@ slow triangle-wave base scan around the full `idle_ready` posture:
 python examples/idle_motion.py
 ```
 
-This is only the no-person fallback. A future attention layer will stop
-calling `IdleController.update()` while a person is detected, command tracking
-targets from camera perception, then call `resume()` when the person is lost.
-Perception remains outside `ArmBackend`.
+This is the no-person fallback. The `perception` package's `FaceFollower`
+(see [Camera face tracking](#camera-face-tracking)) is the attention layer it
+was designed to pair with: it stops calling `IdleController.update()` while a
+face is detected, commands tracking targets, then calls `resume()` when the
+face is lost. The scan now sweeps the full base range (±1.5708 rad, ±90°) so a
+lost face can be reacquired anywhere in yaw. Perception remains outside
+`ArmBackend`.
 
 Named actions are inside the measured calibration domain and may be sent
 through `RaspberryPiArm`. The continuous `IdleController` scan remains
@@ -216,6 +229,41 @@ The configured `120°` native vertical FOV is provisional. PyBullet uses a
 pinhole projection and does not reproduce the physical camera's strong
 wide-angle/fisheye distortion. Replace the projection parameters only after
 checkerboard calibration provides measured intrinsics and distortion.
+
+## Camera face tracking
+
+The `perception` package makes the arm follow a face with its wrist camera.
+It is a **simulation-only** layer on top of the radians `ArmBackend`: it drives
+`PyBulletArm` and never commands real hardware. The pipeline is
+detect → control → arbitrate:
+
+- **Detection** (`perception/detection.py`): `HaarFaceDetector` (OpenCV's
+  bundled Haar cascade — no download) finds the largest face; `ScriptedFaceDetector`
+  returns preset detections for tests and a no-camera demo.
+- **Image source** (`perception/sources.py`): `WebcamSource` reads a local
+  camera via OpenCV/V4L2; `SimCameraSource` delegates to
+  `PyBulletArm.capture_rgb()`, so there is no second camera model.
+- **Control** (`perception/tracker.py`): `FaceTracker` is a proportional
+  3-DOF visual servo — the **base pans**, the **wrist tilts**, and the
+  **shoulder** adjusts stand-off from the apparent face size. Every target is
+  clamped into the simulation limits and slewed at most `max_step_rad` per step.
+- **Arbitration** (`perception/attention.py`): `FaceFollower` tracks while a
+  face is visible and, after a short grace period without one, hands off to the
+  full-range `IdleController` base scan until a face is reacquired.
+
+Gains, response signs, deadbands, and the target face size live in
+`config/tracking.yaml` (simulation-tuning knobs, not physical calibration; the
+`sign_*` values must not be trusted on hardware).
+
+```bash
+python examples/face_tracking.py                     # webcam + Haar (default)
+python examples/face_tracking.py --source sim --detector scripted   # no camera
+python examples/face_tracking.py --show              # also open the camera window
+```
+
+On Linux the webcam uses V4L2 (`/dev/video0`); ensure your user is in the
+`video` group. If the arm drives the face away from center, flip the matching
+`sign_*` in `config/tracking.yaml`.
 
 ## Real hardware (Raspberry Pi only)
 
@@ -276,6 +324,7 @@ python examples/run_action.py happy
 python examples/idle_motion.py
 python examples/emotion_showcase.py happy curious sad surprised
 python examples/camera_snapshot.py
+python examples/face_tracking.py --source sim --detector scripted
 ```
 
 ## Limitations of simulating cheap open-loop hobby servos
@@ -317,3 +366,7 @@ real dynamic behavior.
    are implemented.
 6. ~~Add camera rendering from `camera_link`~~ — RGB capture implemented with
    provisional pinhole intrinsics; physical camera calibration remains.
+7. ~~Add camera face tracking~~ — simulation-only `perception` package
+   (detection, 3-DOF visual servo, webcam/sim sources) with a `FaceFollower`
+   attention layer that hands off to the full-range idle scan; tuning and a
+   real-hardware follow path remain.
