@@ -81,10 +81,10 @@ def test_loads_idle_configuration() -> None:
 
     assert config.pose_name == "idle_ready"
     assert config.scan_joint == "base"
-    assert config.lower_rad == pytest.approx(-0.55)
-    assert config.upper_rad == pytest.approx(0.55)
+    assert config.lower_rad == pytest.approx(-1.5708)
+    assert config.upper_rad == pytest.approx(1.5708)
     assert config.half_cycle_s == pytest.approx(5.0)
-    assert config.scan_speed_rad_s == pytest.approx(0.22)
+    assert config.scan_speed_rad_s == pytest.approx(0.62832)
     assert dict(config.pose_rad) == load_arm_config().poses["idle_ready"]
 
     with pytest.raises(TypeError):

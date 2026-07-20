@@ -9,8 +9,10 @@ from collections.abc import Mapping
 
 import pytest
 
+from butter_finger import IdleController
 from butter_finger.arm import ArmBackend, JointLimitError
 from butter_finger.config import load_arm_config
+from butter_finger.perception.attention import FaceFollower
 from butter_finger.perception.config import load_tracking_config
 from butter_finger.perception.detection import Detection, ScriptedFaceDetector
 from butter_finger.perception.tracker import FaceTracker
@@ -190,3 +192,79 @@ def test_pan_error_converges(config, tracking):
 
     assert errors[-1] < errors[0]
     assert errors[-1] < 0.1  # converged near center
+
+
+# ---------------------------------------------------------------------------
+# Attention layer: switch between tracking and the idle scan
+# ---------------------------------------------------------------------------
+
+def make_follower(config, tracking):
+    arm = FakeArm(config, start=config.poses[tracking.start_pose])
+    tracker = FaceTracker(arm, config, tracking)
+    follower = FaceFollower(tracker, IdleController(arm), lost_grace_s=0.5)
+    return arm, follower
+
+
+def test_follower_starts_idle_and_scans(config, tracking):
+    arm, follower = make_follower(config, tracking)
+    assert follower.state == "idle"
+    pan = tracking.pan_joint
+    before = arm.get_joint_positions()[pan]
+    status = None
+    for _ in range(5):
+        status = follower.update(0.1, None)
+    assert status.state == "idle"
+    assert status.detected is False
+    assert arm.get_joint_positions()[pan] != before  # the base swept
+
+
+def test_follower_tracks_when_face_present(config, tracking):
+    arm, follower = make_follower(config, tracking)
+    status = follower.update(0.1, face(IMAGE_W * 0.9, IMAGE_H / 2))
+    assert status.state == "tracking"
+    assert status.detected is True
+    assert status.tracker_step is not None and status.tracker_step.moved
+
+
+def test_follower_holds_during_grace_then_hands_off_to_idle(config, tracking):
+    arm, follower = make_follower(config, tracking)
+    pan = tracking.pan_joint
+    follower.update(0.1, face(IMAGE_W / 2, IMAGE_H / 2))
+    assert follower.state == "tracking"
+
+    # Brief dropout (< 0.5 s grace): stays tracking, no idle snap.
+    status = follower.update(0.1, None)
+    assert status.state == "tracking"
+
+    # Grace exceeded: hand off to idle; resume() returns the base to idle_ready.
+    status = follower.update(0.5, None)
+    assert status.state == "idle"
+    assert arm.get_joint_positions()[pan] == pytest.approx(0.0)
+
+
+def test_follower_reacquires_after_idle(config, tracking):
+    arm, follower = make_follower(config, tracking)
+    for _ in range(5):
+        follower.update(0.1, None)
+    assert follower.state == "idle"
+    status = follower.update(0.1, face(IMAGE_W / 2, IMAGE_H / 2))
+    assert status.state == "tracking"
+    assert status.detected is True
+
+
+def test_idle_scan_covers_more_than_the_old_range(config, tracking):
+    """The widened scan sweeps past the previous +/-0.55 rad bound."""
+    arm, follower = make_follower(config, tracking)
+    pan = tracking.pan_joint
+    reached = 0.0
+    for _ in range(400):
+        follower.update(0.1, None)
+        reached = max(reached, abs(arm.get_joint_positions()[pan]))
+    assert reached > 0.55  # old bound; proves the full +/-90 deg range is used
+
+
+@pytest.mark.parametrize("dt_s", [True, "1", 0.0, -1.0, float("nan"), float("inf")])
+def test_follower_rejects_invalid_dt(config, tracking, dt_s):
+    _, follower = make_follower(config, tracking)
+    with pytest.raises(ValueError, match="dt_s"):
+        follower.update(dt_s, None)

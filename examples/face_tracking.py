@@ -28,9 +28,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from butter_finger import BackendUnavailableError, PyBulletArm
+from butter_finger import BackendUnavailableError, IdleController, PyBulletArm
 from butter_finger.perception import (
     Detection,
+    FaceFollower,
     FaceTracker,
     HaarFaceDetector,
     load_tracking_config,
@@ -44,6 +45,20 @@ def orbiting_detection(step: int, width: int, height: int, target_fraction: floa
     cy = height / 2 + 0.25 * height * math.sin(0.7 * t)
     size = target_fraction * width * (1.0 + 0.25 * math.sin(0.3 * t))
     return Detection.from_xywh(cx - size / 2, cy - size / 2, size, size, width, height)
+
+
+def scripted_detection(
+    step: int, width: int, height: int, target_fraction: float
+) -> Detection | None:
+    """Orbiting face that vanishes for a stretch each cycle.
+
+    With no camera this still exercises the whole loop: the arm tracks the
+    face, then (when it disappears) hands off to the idle base scan, then
+    reacquires when the face returns.
+    """
+    if step % 1600 >= 1100:  # ~2 s of no face at 240 Hz -> idle scan
+        return None
+    return orbiting_detection(step, width, height, target_fraction)
 
 
 def draw_and_show(cv2, frame_rgb, detection) -> bool:
@@ -75,6 +90,8 @@ def main() -> int:
 
     with arm:
         tracker = FaceTracker(arm, arm.config, tracking_cfg)
+        follower = FaceFollower(tracker, IdleController(arm))
+        dt = arm.time_step_s
 
         # Home to the tracking start pose, then hold briefly.
         arm.reset_joints(tracker.start_pose)
@@ -117,7 +134,7 @@ def main() -> int:
         try:
             while arm.is_connected():
                 if scripted:
-                    detection = orbiting_detection(
+                    detection = scripted_detection(
                         step_i, frame_w, frame_h, tracking_cfg.target_face_fraction
                     )
                 else:
@@ -127,7 +144,8 @@ def main() -> int:
                         if not draw_and_show(cv2, frame, detection):
                             break
 
-                tracker.step(detection)
+                # Track a visible face, or idle-scan the base to look for one.
+                follower.update(dt, detection)
                 arm.step(realtime=True)
                 step_i += 1
         except arm.pb.error:

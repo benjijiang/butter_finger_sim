@@ -9,6 +9,8 @@
 idle:
   pose: idle_ready
   scan_joint: base
-  lower_rad: -0.55
-  upper_rad: 0.55
+  # Full base range (+/- 90 deg): the fallback scan sweeps the entire yaw
+  # freedom so a lost face can be reacquired anywhere in reach.
+  lower_rad: -1.5708
+  upper_rad: 1.5708
   half_cycle_s: 5.0
