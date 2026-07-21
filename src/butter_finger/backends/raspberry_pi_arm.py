@@ -32,12 +32,20 @@ class RaspberryPiArm(ArmBackend):
 
     ``pwm_arm`` may be injected for tests. When omitted, constructing this
     class lazily opens the real Hiwonder board through ``PWMRobotArm``.
+
+    ``stream_duration_s`` sets the board interpolation window used for
+    non-blocking commands (``duration_s=None``). Leave it None to keep
+    ``PWMRobotArm``'s one-second default, which suits occasional single
+    targets. A streamed controller that re-commands many times per second
+    should pass roughly its own loop period instead, so each command can
+    actually complete before the next one replaces it.
     """
 
     def __init__(
         self,
         pwm_arm: PWMRobotArm | None = None,
         config: PhysicalConfig | None = None,
+        stream_duration_s: float | None = None,
     ) -> None:
         pwm_config = (
             pwm_arm.config
@@ -54,6 +62,10 @@ class RaspberryPiArm(ArmBackend):
         self._config = config
         self._pwm_arm = (
             pwm_arm if pwm_arm is not None else PWMRobotArm(config=self._config)
+        )
+        self._validate_duration(stream_duration_s)
+        self._stream_duration_s = (
+            None if stream_duration_s is None else float(stream_duration_s)
         )
         self._last_commanded_rad: dict[str, float] = {}
 
@@ -148,7 +160,17 @@ class RaspberryPiArm(ArmBackend):
             for joint, position in targets.items()
         }
         if duration_s is None:
-            self._pwm_arm.move_joints(targets_pwm)
+            # Non-blocking target update. The board always interpolates over
+            # some window; PWMRobotArm's default is a full second, which is far
+            # too long for a streamed control loop that re-commands many times
+            # per second — every command would be superseded after travelling a
+            # few percent, leaving the arm about a second behind its target.
+            if self._stream_duration_s is None:
+                self._pwm_arm.move_joints(targets_pwm)
+            else:
+                self._pwm_arm.move_joints(
+                    targets_pwm, duration=self._stream_duration_s
+                )
         else:
             duration = float(duration_s)
             self._pwm_arm.move_joints(targets_pwm, duration=duration)

@@ -16,6 +16,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
+from butter_finger.camera import rotate_rgb_clockwise
+
 
 class ImageSource(ABC):
     """Yields camera frames as HxWx3 uint8 RGB arrays."""
@@ -62,6 +64,13 @@ class WebcamSource(ImageSource):
     OpenCV delivers BGR frames; this converts them to RGB so detectors and the
     sim camera agree on channel order. On Linux, ``cv2.VideoCapture(index)``
     opens ``/dev/video<index>`` through V4L2.
+
+    ``rotate_clockwise_deg`` applies the same quarter-turn correction the
+    simulated camera applies in ``PyBulletArm.capture_rgb()``. The physical
+    camera is mounted rotated (the top of its native image points along
+    wrist-local -X), so a caller feeding frames to an upright-face detector
+    must pass ``CameraConfig.rotate_clockwise_deg`` here — otherwise the
+    detector sees sideways faces and the image axes do not match the sim's.
     """
 
     def __init__(
@@ -69,7 +78,15 @@ class WebcamSource(ImageSource):
         camera_index: int = 0,
         width: int | None = None,
         height: int | None = None,
+        rotate_clockwise_deg: int = 0,
     ) -> None:
+        if isinstance(rotate_clockwise_deg, bool) or not isinstance(
+            rotate_clockwise_deg, int
+        ):
+            raise ValueError("rotate_clockwise_deg must be an integer multiple of 90")
+        if rotate_clockwise_deg % 90 != 0:
+            raise ValueError("rotate_clockwise_deg must be an integer multiple of 90")
+
         cv2 = _import_cv2()
         capture = cv2.VideoCapture(camera_index)
         if not capture.isOpened():
@@ -83,14 +100,21 @@ class WebcamSource(ImageSource):
             capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         if height is not None:
             capture.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        # Keep the driver queue shallow: a control loop needs the newest frame,
+        # not a backlog. Ignored by backends that do not support the property.
+        capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         self._cv2 = cv2
         self._capture = capture
+        self._rotate_clockwise_deg = rotate_clockwise_deg % 360
 
     def read(self) -> Any | None:
         ok, frame_bgr = self._capture.read()
         if not ok or frame_bgr is None:
             return None
-        return self._cv2.cvtColor(frame_bgr, self._cv2.COLOR_BGR2RGB)
+        frame = self._cv2.cvtColor(frame_bgr, self._cv2.COLOR_BGR2RGB)
+        if self._rotate_clockwise_deg:
+            frame = rotate_rgb_clockwise(frame, self._rotate_clockwise_deg)
+        return frame
 
     def close(self) -> None:
         if getattr(self, "_capture", None) is not None:

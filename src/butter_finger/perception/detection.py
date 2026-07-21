@@ -1,21 +1,21 @@
 """Face detection: a small abstraction plus two implementations.
 
-- ``HaarFaceDetector`` uses OpenCV's bundled Haar cascade (no download, no
-  network). OpenCV is imported lazily so this module compiles and imports on
-  any machine; only constructing the detector needs ``cv2``.
+- ``HaarFaceDetector`` uses an OpenCV Haar cascade without downloading
+  anything at runtime. It supports both pip-installed OpenCV and the
+  Raspberry Pi OS / Debian system OpenCV package.
 - ``ScriptedFaceDetector`` returns caller-supplied detections and needs no
   dependencies, so the control loop can be exercised in tests and in a
   no-camera demo.
 
 Images are HxWx3 uint8 arrays (rows, cols, RGB) — the same format
-``PyBulletArm.capture_rgb()`` and a webcam both provide. Detectors do not
-care which one the pixels came from.
+``PyBulletArm.capture_rgb()`` and the project's webcam source provide.
 """
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 
@@ -37,7 +37,13 @@ class Detection:
 
     @classmethod
     def from_xywh(
-        cls, x: float, y: float, w: float, h: float, image_width: int, image_height: int
+        cls,
+        x: float,
+        y: float,
+        w: float,
+        h: float,
+        image_width: int,
+        image_height: int,
     ) -> "Detection":
         """Build from a top-left-corner box (the OpenCV convention)."""
         return cls(
@@ -55,16 +61,18 @@ class Detection:
 
     @property
     def width_fraction(self) -> float:
-        """Box width as a fraction of image width (apparent-size proxy)."""
+        """Box width as a fraction of image width."""
         return self.w / self.image_width
 
 
 def largest(detections: Iterable[Detection]) -> Detection | None:
-    """Return the biggest detection (closest/most prominent face), or None."""
+    """Return the biggest detection, or None if there are no detections."""
     best: Detection | None = None
+
     for det in detections:
         if best is None or det.area > best.area:
             best = det
+
     return best
 
 
@@ -78,10 +86,13 @@ class FaceDetector(ABC):
 
 
 class HaarFaceDetector(FaceDetector):
-    """Frontal-face detector using OpenCV's bundled Haar cascade.
+    """Frontal-face detector using an OpenCV Haar cascade.
 
-    The cascade XML ships with the ``opencv-python`` wheel
-    (``cv2.data.haarcascades``); nothing is downloaded at runtime.
+    Supports:
+
+    - pip-installed ``opencv-python`` through ``cv2.data.haarcascades``
+    - Raspberry Pi OS / Debian OpenCV through common system paths
+    - a custom path supplied through ``cascade_path``
     """
 
     def __init__(
@@ -92,14 +103,56 @@ class HaarFaceDetector(FaceDetector):
         cascade_path: str | None = None,
     ) -> None:
         cv2 = _import_cv2()
+
         if cascade_path is None:
-            cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+            filename = "haarcascade_frontalface_default.xml"
+            candidates: list[Path] = []
+
+            # pip-installed opencv-python
+            cv2_data = getattr(cv2, "data", None)
+            pip_cascade_directory = getattr(cv2_data, "haarcascades", None)
+
+            if pip_cascade_directory:
+                candidates.append(
+                    Path(pip_cascade_directory) / filename
+                )
+
+            # Raspberry Pi OS / Debian system package locations
+            candidates.extend(
+                [
+                    Path("/usr/share/opencv4/haarcascades") / filename,
+                    Path("/usr/local/share/opencv4/haarcascades") / filename,
+                    Path("/usr/share/opencv/haarcascades") / filename,
+                ]
+            )
+
+            found_path = next(
+                (path for path in candidates if path.is_file()),
+                None,
+            )
+
+            if found_path is None:
+                checked_paths = "\n".join(
+                    f"  - {path}" for path in candidates
+                )
+
+                raise RuntimeError(
+                    f"Could not find {filename}.\n"
+                    f"Checked these locations:\n{checked_paths}\n\n"
+                    "On Raspberry Pi OS / Debian, install the cascade with:\n"
+                    "    sudo apt update\n"
+                    "    sudo apt install -y opencv-data"
+                )
+
+            cascade_path = str(found_path)
+
         classifier = cv2.CascadeClassifier(cascade_path)
+
         if classifier.empty():
             raise RuntimeError(
-                f"Could not load Haar cascade from {cascade_path!r}. Check the "
-                "opencv-python installation."
+                f"Could not load Haar cascade from {cascade_path!r}."
             )
+
         self._cv2 = cv2
         self._classifier = classifier
         self._scale_factor = scale_factor
@@ -108,27 +161,37 @@ class HaarFaceDetector(FaceDetector):
 
     def detect(self, image: Any) -> Detection | None:
         cv2 = self._cv2
+
         gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
         height, width = gray.shape[:2]
+
         boxes = self._classifier.detectMultiScale(
             gray,
             scaleFactor=self._scale_factor,
             minNeighbors=self._min_neighbors,
             minSize=self._min_size,
         )
+
         detections = (
-            Detection.from_xywh(float(x), float(y), float(w), float(h), width, height)
-            for (x, y, w, h) in boxes
+            Detection.from_xywh(
+                float(x),
+                float(y),
+                float(w),
+                float(h),
+                width,
+                height,
+            )
+            for x, y, w, h in boxes
         )
+
         return largest(detections)
 
 
 class ScriptedFaceDetector(FaceDetector):
     """Returns a preset sequence of detections, ignoring the image.
 
-    Used by tests and the no-camera demo. Each ``detect`` call advances to the
-    next scripted detection; once the script is exhausted it keeps returning
-    the final value (or None if the script ended with None). A ``None`` entry
+    Each ``detect`` call advances to the next scripted detection. Once the
+    script is exhausted, it keeps returning the final value. A ``None`` entry
     simulates a frame where no face was found.
     """
 
@@ -142,17 +205,19 @@ class ScriptedFaceDetector(FaceDetector):
             self._last = next(self._iter)
         except StopIteration:
             pass
+
         return self._last
 
 
 def _import_cv2():
     try:
         import cv2
-    except ImportError as exc:  # pragma: no cover - exercised only without cv2
+    except ImportError as exc:
         raise RuntimeError(
-            "OpenCV (cv2) is not installed. Install the simulation extras on "
-            "the sim machine inside .venv:\n"
-            "    python -m pip install -r requirements-sim.txt\n"
-            "OpenCV is only needed for face detection and the webcam source."
+            "OpenCV (cv2) is not installed.\n"
+            "On Raspberry Pi OS, install it with:\n"
+            "    sudo apt update\n"
+            "    sudo apt install -y python3-opencv opencv-data"
         ) from exc
+
     return cv2

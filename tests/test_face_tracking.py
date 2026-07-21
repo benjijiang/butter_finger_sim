@@ -268,3 +268,97 @@ def test_follower_rejects_invalid_dt(config, tracking, dt_s):
     _, follower = make_follower(config, tracking)
     with pytest.raises(ValueError, match="dt_s"):
         follower.update(dt_s, None)
+
+
+class _FakeCapture:
+    """Minimal cv2.VideoCapture stand-in returning one marked BGR frame."""
+
+    def __init__(self, index: int) -> None:
+        self.index = index
+        self.props: dict[int, float] = {}
+        self.released = False
+
+    def isOpened(self) -> bool:
+        return True
+
+    def set(self, prop: int, value: float) -> None:
+        self.props[prop] = value
+
+    def read(self):
+        import numpy as np
+
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        frame[0:8, 0:8] = 255  # marker in the NATIVE top-left corner
+        return True, frame
+
+    def release(self) -> None:
+        self.released = True
+
+
+@pytest.fixture()
+def fake_cv2(monkeypatch):
+    """Install a fake cv2 so WebcamSource runs without OpenCV or a camera."""
+    import sys
+    import types
+
+    module = types.ModuleType("cv2")
+    module.CAP_PROP_FRAME_WIDTH = 3
+    module.CAP_PROP_FRAME_HEIGHT = 4
+    module.CAP_PROP_BUFFERSIZE = 38
+    module.COLOR_BGR2RGB = 4
+    module.VideoCapture = _FakeCapture
+    module.cvtColor = lambda image, code: image[:, :, ::-1].copy()
+    monkeypatch.setitem(sys.modules, "cv2", module)
+    return module
+
+
+def test_webcam_source_defaults_to_no_rotation(fake_cv2):
+    from butter_finger.perception.sources import WebcamSource
+
+    frame = WebcamSource(0, width=640, height=480).read()
+
+    assert frame.shape == (480, 640, 3)
+
+
+def test_webcam_rotation_matches_the_camera_config_output(fake_cv2):
+    """The rotated real frame must match what capture_rgb() produces.
+
+    The physical camera is mounted a quarter turn, so an unrotated frame feeds
+    the upright-face cascade sideways faces and swaps the pan/tilt image axes.
+    """
+    import numpy as np
+
+    from butter_finger.config import load_camera_config
+    from butter_finger.perception.sources import WebcamSource
+
+    camera = load_camera_config()
+    source = WebcamSource(
+        0,
+        width=camera.native_width,
+        height=camera.native_height,
+        rotate_clockwise_deg=camera.rotate_clockwise_deg,
+    )
+    frame = source.read()
+
+    assert frame.shape == camera.output_shape
+    # A 90 degree clockwise turn sends the native top-left to the top-right.
+    rows, cols = np.where(frame[:, :, 0] == 255)
+    assert rows.min() == 0
+    assert cols.max() == camera.output_width - 1
+
+
+def test_webcam_source_keeps_the_driver_queue_shallow(fake_cv2):
+    """A control loop needs the newest frame, not a backlog of stale ones."""
+    from butter_finger.perception.sources import WebcamSource
+
+    source = WebcamSource(0)
+
+    assert source._capture.props[fake_cv2.CAP_PROP_BUFFERSIZE] == 1
+
+
+@pytest.mark.parametrize("degrees", [45, 1, "90", True, -30])
+def test_webcam_rejects_non_quarter_turn_rotations(fake_cv2, degrees):
+    from butter_finger.perception.sources import WebcamSource
+
+    with pytest.raises(ValueError, match="multiple of 90"):
+        WebcamSource(0, rotate_clockwise_deg=degrees)

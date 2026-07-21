@@ -91,14 +91,25 @@ class PWMRobotArm:
         ``Board`` is opened on the serial port.
     config:
         Pre-loaded PhysicalConfig; loaded from config/joints.yaml when omitted.
+    verbose:
+        Print every commanded pulse (the original script's behaviour, useful
+        for one-shot diagnostics). Streamed control loops should pass False:
+        a few hundred lines a second is unreadable, and over SSH the terminal
+        writes are slow enough to hold up the loop.
     """
 
-    def __init__(self, board=None, config: PhysicalConfig | None = None) -> None:
+    def __init__(
+        self,
+        board=None,
+        config: PhysicalConfig | None = None,
+        verbose: bool = True,
+    ) -> None:
         self._config = config if config is not None else load_physical_config()
         if board is None:
             sdk = _import_sdk()
             board = sdk.Board()
         self.board = board
+        self.verbose = bool(verbose)
 
     @property
     def config(self) -> PhysicalConfig:
@@ -131,7 +142,8 @@ class PWMRobotArm:
             raise ValueError("Duration must be greater than zero")
         pulse = self.validate_pulse(joint, pulse_us)
         port = self._config.pwm_ports[joint]
-        print(f"Moving {joint}: pulse {pulse}, duration {duration:.1f}s")
+        if self.verbose:
+            print(f"Moving {joint}: pulse {pulse}, duration {duration:.1f}s")
         self.board.pwm_servo_set_position(duration, [[port, pulse]])
 
     def move_joints(self, targets_us: Mapping[str, float], duration: float = 1.0) -> None:
@@ -145,13 +157,15 @@ class PWMRobotArm:
         commands = []
         for joint, pulse_us in targets_us.items():
             pulse = self.validate_pulse(joint, pulse_us)
-            print(f"{joint}: pulse {pulse}")
+            if self.verbose:
+                print(f"{joint}: pulse {pulse}")
             commands.append([self._config.pwm_ports[joint], pulse])
         self.board.pwm_servo_set_position(duration, commands)
 
     def home(self, duration: float = 3.0) -> None:
         """Move all joints to the recorded physical home pose."""
-        print("Returning to home pose")
+        if self.verbose:
+            print("Returning to home pose")
         self.move_joints(self._config.home_pwm_us, duration)
 
     def wait(self, seconds: float) -> None:

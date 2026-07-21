@@ -62,6 +62,14 @@ without the physical arm nearby. This is a functional approximate model,
 - Recorded camera optical center relative to `wrist_link`:
   `[0.011, 0.044, 0.013]` m. The optical axis points along wrist-local `+Y`;
   the top of the native image points along wrist-local `-X`.
+- Measured on the Pi 2026-07-21 with `examples/diagnose_face_camera.py`:
+  raw webcam frames MUST get `config/camera.yaml`'s 90-degree clockwise
+  rotation before face detection. Unrotated they yielded 0/120 detections;
+  rotated, 118/120. Unrotated frames also swap the pan/tilt image axes.
+- Measured the same run: capture + Haar detect on a 640x480 frame costs
+  about 27 ms on the Pi 5 (~37 Hz), and a face at conversational distance
+  spans about 0.48 of the rotated frame width — far above `config/tracking.yaml`'s
+  simulation-tuned `target_face_fraction` of 0.30.
 
 ## Known unknowns (do not invent values for these)
 
@@ -103,10 +111,13 @@ calibrated-radian emotional actions begin and end there. Their per-step
 reads as alert/forceful and long motion reads as gentle/reflective/tired.
 `config/idle.yaml` defines the no-person fallback base scan; it now sweeps the
 full base range (±1.5708 rad, ±90°) so a lost face can be reacquired anywhere
-in yaw, and remains simulation-only as a continuously streamed controller. The
-simulation-only `perception` package (face detection, a 3-DOF visual-servo
+in yaw. The `perception` package (face detection, a 3-DOF visual-servo
 `FaceTracker`, and the `FaceFollower` attention layer) uses `config/tracking.yaml`
-and drives `PyBulletArm`; it is what hands off to and from the idle scan.
+and is what hands off to and from the idle scan. Both run on `PyBulletArm` in
+simulation and on `RaspberryPiArm` through `examples/real_face_tracking.py`,
+which overrides the simulation-tuned slew and target face size for hardware.
+The `sign_*` response directions in `config/tracking.yaml` remain unverified
+on the real arm; verify them with that example's `--dry-run` before moving.
 
 ## Architectural rules
 
@@ -146,10 +157,22 @@ and drives `PyBulletArm`; it is what hands off to and from the idle scan.
    package's `FaceFollower` is the attention layer that pairs with it: it drives
    `FaceTracker` while a face is visible and, after a short grace period without
    one, calls `IdleController` (`resume()` then `update()`) to scan for a face.
-   `perception` is a simulation-only layer on top of the radians `ArmBackend`
-   (it drives `PyBulletArm` and calls `capture_rgb()`); it does not extend
-   `ArmBackend` or touch the real-hardware backends. Chat-to-action intent
-   mapping still lives outside `ArmBackend`, `ActionRunner`, and the action YAML.
+   `perception` is a layer on top of the radians `ArmBackend`; it does not
+   extend `ArmBackend`. It drives `PyBulletArm` in simulation and, through
+   `examples/real_face_tracking.py`, `RaspberryPiArm` on hardware. Chat-to-action
+   intent mapping still lives outside `ArmBackend`, `ActionRunner`, and the
+   action YAML.
+10. A streamed controller on real hardware must set `RaspberryPiArm`'s
+    `stream_duration_s` to roughly its own loop period. `PWMRobotArm`'s
+    one-second default is for occasional single targets: at loop rate every
+    command is superseded after travelling a few percent, leaving the arm
+    about a second behind. Because `get_joint_positions()` on the Pi is a
+    last-command estimate rather than feedback, the control law would then
+    integrate open-loop into a joint limit. Such loops must also pass
+    `verbose=False` to `PWMRobotArm` and measure their real wall-clock `dt`
+    instead of assuming a nominal rate. `config/tracking.yaml`'s per-step
+    `max_step_rad` was tuned against the 240 Hz simulation; hardware derives
+    its per-step limit from a rad/s slew cap and the measured period.
 
 ## Safety rules
 
@@ -198,5 +221,9 @@ simplified convex meshes. Joint names and the control API must not change.
       package (Haar + scripted detection, webcam/sim image sources, a 3-DOF
       visual-servo `FaceTracker`) and a `FaceFollower` attention layer that
       hands off to the full-range idle scan when no face is visible. Gains and
-      response signs are unverified sim-tuning knobs (`config/tracking.yaml`);
-      a real-hardware follow path remains.
+      response signs are unverified sim-tuning knobs (`config/tracking.yaml`).
+- [x] Run the same follow stack on the real arm (2026-07-21):
+      `examples/real_face_tracking.py` with hardware loop timing, plus
+      `examples/diagnose_face_camera.py`, the camera-only tool that found the
+      missing frame rotation. Response signs still need `--dry-run` checking
+      on hardware, and `target_face_fraction` needs re-measuring per user.
