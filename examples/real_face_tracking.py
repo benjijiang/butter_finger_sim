@@ -29,13 +29,6 @@ examples/diagnose_face_camera.py:
   * Streamed commands use a short board interpolation window (see
     RaspberryPiArm's stream_duration_s) instead of the one-second default.
 
-If the arm hunts left and right instead of settling, it is overshooting: the
-loop cannot see the effect of a command for a few periods (exposure, Haar
-detection, the board window, the servo moving) and slews at full rate the
-whole time, so it passes centre by about rate * dead time. The startup banner
-prints that overshoot against the deadband meant to absorb it. Lower
---max-rate-rad-s, or raise --deadband-xy, until the margin is comfortable.
-
 VERIFY THE RESPONSE SIGNS FIRST. config/tracking.yaml's sign_pan/sign_tilt/
 sign_distance were guessed for simulation and are explicitly not trusted on
 hardware. Run --dry-run, move your face, and check that the printed target
@@ -57,7 +50,6 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
-import math
 import sys
 import time
 from pathlib import Path
@@ -82,26 +74,7 @@ from butter_finger.perception import (
 # step, and at the simulation's 240 Hz it allows several rad/s. This caps the
 # real arm's commanded speed in rad/s; the per-step limit is derived from the
 # measured loop period below.
-#
-# This rate also sets how far the arm overshoots the face. The loop cannot see
-# the effect of a command for roughly DEAD_TIME_PERIODS loops (exposure, Haar
-# detection, the board's interpolation window, then the servo actually moving),
-# and it keeps slewing at full rate throughout. So it sails past centre by
-# about rate * dead time every time. When that overshoot approaches the
-# deadband the arm crosses back and forth and visibly shakes; keeping the
-# deadband comfortably larger than the overshoot is what stops it.
-DEFAULT_MAX_RATE_RAD_S = 0.20
-
-# Loop periods of sensing-plus-actuation lag, for the overshoot estimate.
-DEAD_TIME_PERIODS = 3.0
-
-# Deadbands: normalized errors below these count as zero. Both are wider than
-# config/tracking.yaml's simulation values. The pan/tilt band must cover the
-# overshoot above (plus the frame-to-frame jitter of the Haar box); the
-# distance band is relative to target_face_fraction, so 0.25 accepts a face
-# between 0.75x and 1.25x the target width rather than fussing over stand-off.
-DEFAULT_DEADBAND_XY = 0.08
-DEFAULT_DEADBAND_DISTANCE = 0.25
+DEFAULT_MAX_RATE_RAD_S = 0.35
 
 # Board interpolation window for streamed targets: a little longer than one
 # loop period, so motion stays continuous without commands piling up.
@@ -170,22 +143,7 @@ def main() -> int:
         "--max-rate-rad-s",
         type=float,
         default=DEFAULT_MAX_RATE_RAD_S,
-        help=f"joint slew limit in rad/s (default {DEFAULT_MAX_RATE_RAD_S}). "
-        "Lower it if the arm shakes: overshoot is proportional to this",
-    )
-    parser.add_argument(
-        "--deadband-xy",
-        type=float,
-        default=DEFAULT_DEADBAND_XY,
-        help="normalized pan/tilt error treated as centred "
-        f"(default {DEFAULT_DEADBAND_XY}). Raise it if the arm hunts",
-    )
-    parser.add_argument(
-        "--deadband-distance",
-        type=float,
-        default=DEFAULT_DEADBAND_DISTANCE,
-        help="accepted face-size error relative to target_face_fraction "
-        f"(default {DEFAULT_DEADBAND_DISTANCE} = target +/- 25%%)",
+        help=f"joint slew limit in rad/s (default {DEFAULT_MAX_RATE_RAD_S})",
     )
     parser.add_argument("--flip-pan", action="store_true", help="invert sign_pan")
     parser.add_argument("--flip-tilt", action="store_true", help="invert sign_tilt")
@@ -209,9 +167,6 @@ def main() -> int:
     ):
         print("--target-face-fraction must be in (0, 1).", file=sys.stderr)
         return 2
-    if args.deadband_xy < 0 or args.deadband_distance < 0:
-        print("Deadbands must not be negative.", file=sys.stderr)
-        return 2
 
     # ArmConfig (radians limits + named poses) for the tracker. This is NOT
     # RaspberryPiArm.config, which is a PhysicalConfig (calibrations/PWM).
@@ -219,10 +174,7 @@ def main() -> int:
     camera_cfg = load_camera_config()
     tracking_cfg = load_tracking_config()
 
-    overrides: dict[str, float] = {
-        "deadband_xy": args.deadband_xy,
-        "deadband_distance": args.deadband_distance,
-    }
+    overrides: dict[str, float] = {}
     if args.target_face_fraction is not None:
         overrides["target_face_fraction"] = args.target_face_fraction
     if args.flip_pan:
@@ -301,9 +253,7 @@ def main() -> int:
           f"board window {stream_duration_s * 1000:.0f} ms")
     print(f"  signs: pan {tracking_cfg.sign_pan:+g}  tilt {tracking_cfg.sign_tilt:+g}"
           f"  distance {tracking_cfg.sign_distance:+g}")
-    print(f"  holding face width at {tracking_cfg.target_face_fraction:.2f} of image"
-          f" +/- {tracking_cfg.deadband_distance:.0%}")
-    print(f"  {describe_shake_margin(tracking_cfg, camera_cfg, args, loop_period_s)}")
+    print(f"  holding face width at {tracking_cfg.target_face_fraction:.2f} of image")
     if args.dry_run:
         print("\n  Move your face and check each joint moves TOWARD it.")
         print("  Wrong direction? Re-run with --flip-pan / --flip-tilt / "
@@ -364,29 +314,6 @@ def measure_loop_period(source, detector, frames: int = 20) -> float | None:
     if not durations:
         return None
     return sum(durations) / len(durations)
-
-
-def describe_shake_margin(tracking_cfg, camera_cfg, args, loop_period_s: float) -> str:
-    """Compare the dead-time overshoot against the deadband that absorbs it.
-
-    The arm keeps slewing for about DEAD_TIME_PERIODS loops before it can see
-    the result, so it sails past centre by roughly rate * dead time. If that
-    approaches the deadband it crosses back and forth and shakes. Angles use
-    config/camera.yaml's PROVISIONAL, uncalibrated field of view, so treat the
-    degrees as indicative and the ratio as the thing to watch.
-    """
-    dead_time_s = DEAD_TIME_PERIODS * loop_period_s
-    overshoot_rad = args.max_rate_rad_s * dead_time_s
-    # The rotated frame's horizontal extent is the camera's native vertical FOV.
-    half_fov_rad = math.radians(camera_cfg.vertical_fov_deg) / 2.0
-    deadband_rad = tracking_cfg.deadband_xy * half_fov_rad
-    ratio = deadband_rad / overshoot_rad if overshoot_rad > 0 else float("inf")
-    verdict = "should hold steady" if ratio >= 2.0 else "MAY SHAKE - lower --max-rate-rad-s or raise --deadband-xy"
-    return (
-        f"deadband {math.degrees(deadband_rad):.1f} deg vs "
-        f"~{math.degrees(overshoot_rad):.1f} deg overshoot "
-        f"({ratio:.1f}x margin): {verdict}"
-    )
 
 
 def report(status, detection, arm) -> None:
