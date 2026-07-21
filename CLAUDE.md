@@ -173,6 +173,14 @@ on the real arm; verify them with that example's `--dry-run` before moving.
     instead of assuming a nominal rate. `config/tracking.yaml`'s per-step
     `max_step_rad` was tuned against the 240 Hz simulation; hardware derives
     its per-step limit from a rad/s slew cap and the measured period.
+11. A streamed visual servo on hardware cannot see a command's effect for
+    roughly three loop periods (exposure, detection, the board window, the
+    servo moving) and slews at full rate throughout, so it overshoots by
+    about slew rate times that dead time. Keep the pan/tilt deadband well
+    above that overshoot — a margin near 2x let detector jitter push the
+    error back outside the band and the base visibly hunted (observed
+    2026-07-22). `examples/real_face_tracking.py` prints the margin at
+    startup and defaults to 0.20 rad/s with a 0.08 deadband, roughly 5x.
 
 ## Safety rules
 
