@@ -236,10 +236,92 @@ def test_follower_holds_during_grace_then_hands_off_to_idle(config, tracking):
     status = follower.update(0.1, None)
     assert status.state == "tracking"
 
-    # Grace exceeded: hand off to idle; resume() returns the base to idle_ready.
+    # Grace exceeded. The arm never left idle_ready here (the face was
+    # centered), so the return settles on its first tick and the scan starts.
     status = follower.update(0.5, None)
     assert status.state == "idle"
     assert arm.get_joint_positions()[pan] == pytest.approx(0.0)
+
+
+def test_lost_face_returns_gradually_and_holds_the_bearing(config, tracking):
+    """The old hand-off snapped every joint at once; this one is rate limited."""
+    arm, follower = make_follower(config, tracking)
+    pan = tracking.pan_joint
+    idle_pose = config.poses[tracking.start_pose]
+
+    # Track a face off to one side until the arm is well away from idle_ready.
+    for _ in range(60):
+        follower.update(1 / 240, face(IMAGE_W * 0.9, IMAGE_H * 0.9))
+    bearing = arm.get_joint_positions()[pan]
+    assert abs(bearing - idle_pose[pan]) > 0.1
+
+    # Losing it enters the rate-limited return, not the scan.
+    status = follower.update(1.0, None)
+    assert status.state == "returning"
+
+    rate = 0.6  # FaceFollower's default return_rate_rad_s
+    dt = 1 / 240
+    previous = arm.get_joint_positions()
+    for _ in range(2000):
+        if follower.state != "returning":
+            break
+        follower.update(dt, None)
+        positions = arm.get_joint_positions()
+        for joint, angle in positions.items():
+            assert abs(angle - previous[joint]) <= rate * dt + 1e-9
+        previous = positions
+    else:  # pragma: no cover - the return must terminate
+        pytest.fail("the return never settled")
+
+    assert follower.state == "idle"
+    # Posture restored, but the base stayed on the last-seen bearing.
+    positions = arm.get_joint_positions()
+    for joint, angle in idle_pose.items():
+        if joint != pan:
+            assert angle == pytest.approx(positions[joint], abs=1e-6)
+    assert positions[pan] == pytest.approx(bearing)
+
+
+def test_idle_scan_continues_toward_the_last_seen_direction(config, tracking):
+    """A face leaving one way is looked for that way, not toward +upper."""
+    arm, follower = make_follower(config, tracking)
+    pan = tracking.pan_joint
+
+    # A face right of center pans by sign_pan * (positive error). Stop well
+    # short of the scan bound, which would legitimately reverse the sweep.
+    pan_direction = 1 if tracking.sign_pan > 0 else -1
+    for _ in range(20):
+        follower.update(1 / 240, face(IMAGE_W * 0.9, IMAGE_H / 2))
+
+    follower.update(1.0, None)
+    while follower.state == "returning":
+        follower.update(1 / 240, None)
+    bearing = arm.get_joint_positions()[pan]
+
+    for _ in range(10):
+        follower.update(0.05, None)
+    swept = arm.get_joint_positions()[pan] - bearing
+    assert swept * pan_direction > 0
+
+
+def test_returning_reacquires_immediately(config, tracking):
+    arm, follower = make_follower(config, tracking)
+    for _ in range(60):
+        follower.update(1 / 240, face(IMAGE_W * 0.9, IMAGE_H * 0.9))
+    follower.update(1.0, None)
+    assert follower.state == "returning"
+
+    status = follower.update(1 / 240, face(IMAGE_W / 2, IMAGE_H / 2))
+    assert status.state == "tracking"
+    assert status.detected is True
+
+
+@pytest.mark.parametrize("rate", [0.0, -1.0, float("nan"), True, "1"])
+def test_follower_rejects_invalid_return_rate(config, tracking, rate):
+    arm = FakeArm(config, start=config.poses[tracking.start_pose])
+    tracker = FaceTracker(arm, config, tracking)
+    with pytest.raises(ValueError, match="return_rate_rad_s"):
+        FaceFollower(tracker, IdleController(arm), return_rate_rad_s=rate)
 
 
 def test_follower_reacquires_after_idle(config, tracking):

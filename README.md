@@ -200,6 +200,12 @@ face is lost. The scan now sweeps the full base range (±1.5708 rad, ±90°) so 
 lost face can be reacquired anywhere in yaw. Perception remains outside
 `ArmBackend`.
 
+`resume()` defaults to restoring the whole `idle_ready` pose, including the
+base — right for a showcase or a cold start. Pass `from_position_rad` (and
+optionally `direction=-1`) to restart the sweep from the scan joint's current
+angle instead; that is what `FaceFollower` does so a lost face does not send
+the base snapping back to center.
+
 Named actions are inside the measured calibration domain and may be sent
 through `RaspberryPiArm`. The continuous `IdleController` scan remains
 simulation-only because its high-frequency real-hardware behavior is untested.
@@ -249,7 +255,15 @@ detect → control → arbitrate:
   clamped into the simulation limits and slewed at most `max_step_rad` per step.
 - **Arbitration** (`perception/attention.py`): `FaceFollower` tracks while a
   face is visible and, after a short grace period without one, hands off to the
-  full-range `IdleController` base scan until a face is reacquired.
+  full-range `IdleController` base scan until a face is reacquired. The
+  hand-off passes through a `returning` state: the posture joints ease back to
+  `idle_ready` at `return_rate_rad_s` (default 0.6 rad/s, matching the scan's
+  own speed) while the base *holds the bearing the face was last seen at*, and
+  the scan then continues from there in the direction the face was last
+  moving. Going straight to `resume()` instead meant one unbounded
+  `move_joints` — the only command in the stack not slew-limited — which on
+  hardware asks the board to cover the whole tracking excursion inside its
+  short streaming window.
 
 Gains, response signs, deadbands, and the target face size live in
 `config/tracking.yaml` (simulation-tuning knobs, not physical calibration; the

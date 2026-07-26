@@ -12,8 +12,9 @@ WebcamSource) driving RaspberryPiArm instead of PyBulletArm.
 
 The arm pans with the base, tilts with the wrist, and adjusts stand-off with
 the shoulder from the apparent face size. When no face is seen for a short
-grace period it hands off to the idle base scan to look for one, then
-reacquires.
+grace period the posture joints ease back to the idle pose while the base
+holds the bearing the face was last seen at, and the idle scan then sweeps on
+from there until it reacquires.
 
 Three things differ from the simulation, all of them measured on the Pi with
 examples/diagnose_face_camera.py:
@@ -241,7 +242,12 @@ def main() -> int:
             return 1
 
     tracker = FaceTracker(arm, arm_config, tracking_cfg)
-    follower = FaceFollower(tracker, IdleController(arm))
+    # Losing a face eases the posture joints back to idle at the same slew
+    # limit tracking uses, instead of one unbounded jump the board would try
+    # to cover inside its short streaming window.
+    follower = FaceFollower(
+        tracker, IdleController(arm), return_rate_rad_s=args.max_rate_rad_s
+    )
 
     mode = "DRY RUN (nothing moves)" if args.dry_run else "REAL"
     print(f"\nButter Finger {mode} face tracking")
@@ -321,7 +327,7 @@ def report(status, detection, arm) -> None:
     if not status.detected:
         position = status.idle_position_rad
         where = f" base={position:+.3f}" if position is not None else ""
-        print(f"[{status.state:8}] no face{where}")
+        print(f"[{status.state:9}] no face{where}")
         return
 
     step = status.tracker_step
@@ -329,7 +335,7 @@ def report(status, detection, arm) -> None:
         f"{joint}={angle:+.3f}" for joint, angle in sorted(step.targets.items())
     )
     print(
-        f"[{status.state:8}] face err x={step.error_x:+.2f} y={step.error_y:+.2f} "
+        f"[{status.state:9}] face err x={step.error_x:+.2f} y={step.error_y:+.2f} "
         f"size={step.error_size:+.2f} -> {targets}"
     )
 

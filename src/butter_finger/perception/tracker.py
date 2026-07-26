@@ -55,6 +55,19 @@ class FaceTracker:
         self._arm = arm
         self._config = config
         self._tracking = tracking
+        self._last_pan_direction = 0
+
+    @property
+    def last_pan_direction(self) -> int:
+        """Which way the pan joint was last chasing a face: ``1``, ``-1``, ``0``.
+
+        ``0`` until a pan command is actually issued. Steps inside the pan
+        deadband leave it alone, so after a face that was centered when it
+        vanished this still reports the last real correction — the best bearing
+        hint available. The idle scan uses it to sweep toward where the person
+        was heading instead of always starting toward the upper bound.
+        """
+        return self._last_pan_direction
 
     @property
     def start_pose(self) -> dict[str, float]:
@@ -99,6 +112,8 @@ class FaceTracker:
             delta = _clamp(sign * gain * error, -trk.max_step_rad, trk.max_step_rad)
             if delta != 0.0:
                 moved = True
+                if joint == trk.pan_joint:
+                    self._last_pan_direction = 1 if delta > 0.0 else -1
             targets[joint] = self._clamp_to_limits(joint, positions[joint] + delta)
 
         if targets:

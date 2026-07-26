@@ -157,6 +157,11 @@ on the real arm; verify them with that example's `--dry-run` before moving.
    package's `FaceFollower` is the attention layer that pairs with it: it drives
    `FaceTracker` while a face is visible and, after a short grace period without
    one, calls `IdleController` (`resume()` then `update()`) to scan for a face.
+   That hand-off goes through a rate-limited `returning` state
+   (`return_rate_rad_s`) instead of one unbounded `move_joints`, and holds the
+   scan joint at the last-seen bearing via `resume(from_position_rad=...,
+   direction=...)`. `resume()` with no arguments still restores the whole
+   `idle_ready` pose, which is what the showcase and idle examples want.
    `perception` is a layer on top of the radians `ArmBackend`; it does not
    extend `ArmBackend`. It drives `PyBulletArm` in simulation and, through
    `examples/real_face_tracking.py`, `RaspberryPiArm` on hardware. Chat-to-action
