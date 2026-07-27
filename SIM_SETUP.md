@@ -160,6 +160,44 @@ The real arm has no verified shaft-angle feedback. Returned positions are
 last-command estimates, and the two-point mapping does not validate speed,
 torque, backlash, or behavior under load.
 
+### Pi Bluetooth voice assistant
+
+Voice chat is intentionally not part of the simulation dependency set.
+Create or activate the Pi's own virtual environment, then install:
+
+```bash
+sudo apt install libportaudio2 portaudio19-dev
+python -m pip install -e '.[voice]'
+```
+
+The paired Bluetooth device must be in its bidirectional HFP/HSP
+speakerphone/headset profile. Verify input and output before touching the arm:
+
+```bash
+python examples/voice_chat.py --list-audio-devices
+python examples/voice_chat.py --device-name "Speaker Name" --audio-loopback 3
+python examples/voice_chat.py --device-name "Speaker Name" --wake-test
+```
+
+Then set `OPENAI_API_KEY` in the environment and run the logging-only path:
+
+```bash
+export OPENAI_API_KEY='your-api-key'
+python examples/voice_chat.py --device-name "Speaker Name" --dry-run
+```
+
+Only after wake, semantic turn detection, streamed speech/transcript,
+emotion selection, and token reporting all work should the real arm be used:
+
+```bash
+python examples/voice_chat.py --device-name "Speaker Name" --confirm-hardware
+```
+
+Voice chat exclusively owns the arm. Stop face tracking, idle scanning, and
+other motion examples first. See the Raspberry Pi voice-chat section in
+`README.md` for endpoint-ID overrides, threshold tuning, the lower-cost model,
+failure recovery, and shutdown behavior.
+
 ## 7. Deactivate / reactivate the environment
 
 ```bash
@@ -191,3 +229,6 @@ command-line developer tools with `xcode-select --install`, and retry inside
 | GUI fails with OpenGL/GLX errors (Linux) | Install `libgl1` and `mesa-utils`; on NVIDIA, check `nvidia-smi` shows the driver |
 | Camera snapshot is empty or points the wrong way | Confirm `config/geometry.yaml` camera offset and the `+Y` forward / `-X` native-up convention |
 | `pip install pybullet` compile error | Upgrade pip/setuptools/wheel; Linux: install `build-essential python3-dev`; Mac: `xcode-select --install`; retry inside `.venv` |
+| Bluetooth device has output but no input | Switch it from A2DP to its HFP/HSP speakerphone/headset profile, then rerun `--list-audio-devices` |
+| `sounddevice` cannot open an endpoint | Install PortAudio, verify the endpoint IDs with `--list-audio-devices`, and run `--audio-loopback 3` |
+| Wake phrase is missed or triggers too often | Run `--wake-test`; tune `--wake-threshold` for the actual room and microphone |

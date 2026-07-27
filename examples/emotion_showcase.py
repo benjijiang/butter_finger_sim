@@ -29,29 +29,9 @@ from butter_finger import (
     RaspberryPiArm,
     load_action_config,
 )
+from butter_finger.voice.emotions import CONVERSATIONAL_ACTION_NAMES
 
-EMOTION_ACTION_NAMES = (
-    "greet",
-    "nod_yes",
-    "shake_no",
-    "attentive",
-    "happy",
-    "excited",
-    "proud",
-    "playful",
-    "affectionate",
-    "shy",
-    "curious",
-    "thinking",
-    "confused",
-    "sad",
-    "disappointed",
-    "bored",
-    "sleepy",
-    "surprised",
-    "scared",
-    "angry",
-)
+EMOTION_ACTION_NAMES = CONVERSATIONAL_ACTION_NAMES
 
 
 def _build_parser() -> argparse.ArgumentParser:

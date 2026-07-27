@@ -57,7 +57,8 @@ butter-finger-sim/
 │   ├── actions.yaml         # named action sequences in calibrated radians
 │   ├── idle.yaml            # simulation-only no-person scan behavior
 │   ├── camera.yaml          # camera stream metadata and simulation projection
-│   └── tracking.yaml        # simulation-only face-tracking control knobs
+│   ├── tracking.yaml        # simulation-only face-tracking control knobs
+│   └── voice.yaml           # Pi voice, wake, audio, and Realtime settings
 ├── models/
 │   ├── meshes/                      # SolidWorks-exported link meshes
 │   └── butter_finger_simple.urdf   # GENERATED from config/ — do not hand-edit
@@ -69,6 +70,7 @@ butter-finger-sim/
 │   ├── idle.py              # non-blocking fallback idle scan
 │   ├── camera.py            # optical-frame math and RGB rotation
 │   ├── config.py            # YAML config loader (sim + physical sections)
+│   ├── voice/               # optional Pi wake/audio/Realtime coordination
 │   ├── perception/          # simulation-only camera face tracking
 │   │   ├── detection.py         # face detectors (Haar + scripted)
 │   │   ├── sources.py           # image sources (webcam + sim camera)
@@ -87,6 +89,7 @@ butter-finger-sim/
 │   ├── run_action.py        # list/run actions with sim or real backend
 │   ├── idle_motion.py       # continuous slow no-person scan
 │   ├── emotion_showcase.py  # play emotions with sim or real backend
+│   ├── voice_chat.py        # Pi Bluetooth voice chat + emotional gestures
 │   ├── camera_snapshot.py   # render one simulated RGB frame
 │   ├── face_tracking.py     # camera face tracking (webcam or sim camera)
 │   ├── pi_test_pose.py      # REAL HARDWARE: joint-by-joint home-pose test
@@ -182,6 +185,80 @@ servo performance; test speed and load behavior cautiously on hardware.
 `emotion_showcase.py` plays either a supplied list or all twenty actions. In
 simulation it runs a slow idle scan between actions. On real hardware it only
 waits between gestures and does not stream `IdleController` targets.
+
+## Raspberry Pi voice chat
+
+`examples/voice_chat.py` is a Pi-oriented, hands-free voice assistant. Room
+audio stays local until PocketSphinx hears the exact phrase **“butter
+finger.”** It then opens one stateful OpenAI Realtime WebSocket session,
+uses semantic VAD for follow-up turns, streams the audible answer to the
+Bluetooth speaker, prints the matching transcript, and selects exactly one of
+the twenty conversational actions through the local
+`express_emotion(action)` function.
+
+The function schema contains only an action-name enum. Model-generated joint
+angles, PWM, unknown actions, additional arguments, duplicate calls, and
+queued gestures are rejected before `ActionRunner` can move the arm. The
+gesture runs at the same time as the spoken answer, while microphone upload is
+paused until both finish. The session closes and loses its conversation
+history after 60 seconds without user speech.
+
+Install the optional Pi dependencies in a Pi-specific virtual environment:
+
+```bash
+sudo apt install libportaudio2 portaudio19-dev
+python -m pip install -e '.[voice]'
+```
+
+Pair the speakerphone and select its bidirectional **HFP/HSP** profile. A2DP
+is playback-only and cannot supply the microphone. Inspect what PortAudio can
+actually open:
+
+```bash
+python examples/voice_chat.py --list-audio-devices
+python examples/voice_chat.py --device-name "Speaker Name" --audio-loopback 3
+python examples/voice_chat.py --device-name "Speaker Name" --wake-test \
+  --wake-threshold 1e-20
+```
+
+The input and output may be separate endpoint IDs:
+
+```bash
+python examples/voice_chat.py --input-device-id 4 --output-device-id 5 \
+  --audio-loopback 3
+```
+
+Diagnostics never open the arm or contact OpenAI. Once loopback and wake
+detection work, provide the API key through the process environment. It is
+never read from YAML or a `.env` file:
+
+```bash
+export OPENAI_API_KEY='your-api-key'
+
+# Full cloud conversation with a logging-only arm; no PWM is sent.
+python examples/voice_chat.py --device-name "Speaker Name" --dry-run
+
+# Lower-cost Realtime model.
+python examples/voice_chat.py --device-name "Speaker Name" --dry-run \
+  --model gpt-realtime-2.1-mini
+
+# Real arm: homes, moves to idle_ready, then exclusively owns the arm.
+python examples/voice_chat.py --device-name "Speaker Name" --confirm-hardware
+```
+
+Do not run face tracking, `idle_motion.py`, an action showcase, or any other
+arm process at the same time. On Ctrl-C, the voice process stops new turns,
+waits for an already validated gesture, returns home, closes audio and the
+WebSocket, and disconnects the arm. A Bluetooth disconnect is retried locally;
+a recoverable network failure closes the cloud session and returns to wake
+mode. If a selected device exposes only A2DP output, startup fails before
+`RaspberryPiArm` is constructed and explains that HFP/HSP must be enabled.
+
+OpenAI API usage is billed separately from a ChatGPT subscription. Both audio
+input/output tokens and the small tool-selection response consume API usage;
+the local wake detector and closed-session room audio do not. The default is
+`gpt-realtime-2.1`; select `gpt-realtime-2.1-mini` to reduce operating cost.
+The program prints token usage after every spoken reply.
 
 ## Simulation idle behavior
 

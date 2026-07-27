@@ -178,6 +178,13 @@ on the real arm; verify them with that example's `--dry-run` before moving.
     instead of assuming a nominal rate. `config/tracking.yaml`'s per-step
     `max_step_rad` was tuned against the 240 Hz simulation; hardware derives
     its per-step limit from a rad/s slew cap and the measured period.
+11. Pi voice chat lives in the optional `butter_finger.voice` package. It
+    owns wake detection, Bluetooth PCM, OpenAI Realtime events, and
+    chat-to-action selection without changing `ArmBackend`, `ActionRunner`, or
+    action YAML. Native voice dependencies are lazy and must not affect normal
+    imports. Only the 20 conversational action names may cross the model tool
+    boundary; never accept model joint angles or PWM. Voice chat exclusively
+    owns the arm and must not run beside face tracking or idle scanning.
 
 ## Safety rules
 
@@ -232,3 +239,9 @@ simplified convex meshes. Joint names and the control API must not change.
       `examples/diagnose_face_camera.py`, the camera-only tool that found the
       missing frame rotation. Response signs still need `--dry-run` checking
       on hardware, and `target_face_fraction` needs re-measuring per user.
+- [x] Add Pi Bluetooth voice chat (2026-07-26): exact local “butter finger”
+      PocketSphinx wake phrase, semantic-VAD OpenAI Realtime conversation,
+      streamed speech/transcript/usage, one enum-constrained emotional action
+      per reply, half-duplex turn locking, reconnection, dry-run diagnostics,
+      and safe homing/cleanup. Physical Bluetooth and live API acceptance
+      remain to be run on the Pi.
