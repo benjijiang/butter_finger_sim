@@ -15,7 +15,12 @@ dependencies = [
 
 [project.optional-dependencies]
 # PyBullet is only installed on the simulation machine (Linux primary, Mac fallback).
-sim = ["pybullet>=3.2.5,<4", "Pillow>=12.3,<13"]
+sim = ["pybullet>=3.2.5,<4", "Pillow>=12.3,<13", "opencv-python>=4.8,<5"]
+voice = [
+    "websocket-client>=1.7,<2",
+    "sounddevice>=0.4.6,<1",
+    "pocketsphinx>=5.0,<6",
+]
 dev = ["pytest>=7.4"]
 
 [tool.setuptools.packages.find]

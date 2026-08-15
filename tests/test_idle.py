@@ -81,10 +81,10 @@ def test_loads_idle_configuration() -> None:
 
     assert config.pose_name == "idle_ready"
     assert config.scan_joint == "base"
-    assert config.lower_rad == pytest.approx(-0.55)
-    assert config.upper_rad == pytest.approx(0.55)
+    assert config.lower_rad == pytest.approx(-1.5708)
+    assert config.upper_rad == pytest.approx(1.5708)
     assert config.half_cycle_s == pytest.approx(5.0)
-    assert config.scan_speed_rad_s == pytest.approx(0.22)
+    assert config.scan_speed_rad_s == pytest.approx(0.62832)
     assert dict(config.pose_rad) == load_arm_config().poses["idle_ready"]
 
     with pytest.raises(TypeError):
@@ -131,6 +131,66 @@ def test_resume_restores_full_idle_pose_without_blocking() -> None:
     assert arm.calls == [(dict(config.pose_rad), None)]
     assert controller.position_rad == 0.0
     assert controller.direction == 1
+
+
+def test_resume_can_hold_the_scan_joint_where_it_is() -> None:
+    """The attention layer resumes from the last bearing, not from center."""
+    arm = FakeArm()
+    config = make_idle_config()
+    controller = IdleController(arm, config)
+
+    controller.resume(from_position_rad=0.4)
+
+    targets, duration_s = arm.calls[-1]
+    assert duration_s is None
+    assert targets["base"] == pytest.approx(0.4)  # held, not snapped to 0.0
+    assert targets["shoulder"] == -0.3  # posture still restored
+    assert controller.position_rad == pytest.approx(0.4)
+
+    # The scan carries on from there rather than jumping.
+    controller.update(0.1)
+    assert controller.position_rad == pytest.approx(0.425)
+
+
+def test_resume_can_scan_toward_the_lower_bound() -> None:
+    arm = FakeArm()
+    controller = IdleController(arm, make_idle_config())
+
+    controller.resume(from_position_rad=0.0, direction=-1)
+
+    assert controller.direction == -1
+    controller.update(0.1)
+    assert controller.position_rad == pytest.approx(-0.025)
+
+
+def test_resume_clamps_a_position_outside_the_scan_bounds() -> None:
+    arm = FakeArm()
+    config = make_idle_config()
+    controller = IdleController(arm, config)
+
+    controller.resume(from_position_rad=1.5)
+
+    assert controller.position_rad == pytest.approx(config.upper_rad)
+
+
+@pytest.mark.parametrize("value", [True, "0.1", float("nan"), float("inf")])
+def test_resume_rejects_an_invalid_position(value) -> None:
+    arm = FakeArm()
+    controller = IdleController(arm, make_idle_config())
+
+    with pytest.raises(ValueError, match="from_position_rad"):
+        controller.resume(from_position_rad=value)
+    assert arm.calls == []
+
+
+@pytest.mark.parametrize("value", [0, 2, -2, True, "1", 1.0])
+def test_resume_rejects_an_invalid_direction(value) -> None:
+    arm = FakeArm()
+    controller = IdleController(arm, make_idle_config())
+
+    with pytest.raises(ValueError, match="direction"):
+        controller.resume(direction=value)
+    assert arm.calls == []
 
 
 def test_update_scans_between_bounds_and_reverses() -> None:

@@ -1,0 +1,45 @@
+# Butter Finger — face-tracking control knobs (simulation-only)
+#
+# ALL VALUES ARE DEVELOPMENT-TUNING KNOBS, not physical calibration. The
+# visual servo pans with the base, tilts with the wrist, and adjusts stand-off
+# with the shoulder from the apparent face size. Joint rotation directions on
+# the real arm are not verified, so the sign_* values must never be trusted on
+# hardware — this feature drives PyBulletArm only.
+#
+# Loaded by butter_finger.perception.config.load_tracking_config(), kept
+# separate from config/camera.yaml (camera intrinsics) and the core loaders.
+
+tracking:
+  # Which joints the tracker drives. base pans (yaw), wrist tilts (pitch),
+  # shoulder adjusts stand-off. These are the stable four-joint API names.
+  pan_joint: base
+  tilt_joint: wrist
+  distance_joint: shoulder
+
+  # Named pose (config/poses.yaml) to home to before tracking. idle_ready is
+  # the neutral hand-off posture and is valid within the calibrated limits.
+  start_pose: idle_ready
+
+  # Proportional gains: radians of joint change per unit of normalized error.
+  gain_pan: 0.60
+  gain_tilt: 0.45
+  gain_distance: 0.40
+
+  # Sign of each joint's response. Guessed for simulation; flip a value if the
+  # arm drives the face away from center (or the wrong way on stand-off).
+  sign_pan: -1.0
+  sign_tilt: -1.0
+  sign_distance: 1.0
+
+  # Normalized errors (0..1) below these are treated as zero, so the arm does
+  # not jitter around the center or target size.
+  deadband_xy: 0.05
+  deadband_distance: 0.10
+
+  # Maximum joint change per control step (radians): the arm slews smoothly
+  # instead of snapping to the target.
+  max_step_rad: 0.03
+
+  # Desired apparent face size: bounding-box width as a fraction of image
+  # width. The distance controller drives the measured fraction toward this.
+  target_face_fraction: 0.30

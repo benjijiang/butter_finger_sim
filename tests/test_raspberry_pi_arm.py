@@ -93,6 +93,35 @@ def test_untimed_move_uses_pwm_default_without_waiting(
     assert waits == []
 
 
+def test_untimed_move_uses_stream_duration_when_configured() -> None:
+    """A streamed loop re-commands faster than the one-second PWM default."""
+    board = FakeBoard()
+    pwm_arm = PWMRobotArm(board=board)
+    waits: list[float] = []
+    pwm_arm.wait = waits.append  # type: ignore[method-assign]
+    arm = RaspberryPiArm(pwm_arm=pwm_arm, stream_duration_s=0.04)
+
+    arm.move_joint("wrist", -1.4124)
+
+    assert board.calls == [(0.04, [[5, 1500]])]
+    assert waits == []
+
+    # An explicit duration still wins, and still blocks until it completes.
+    arm.move_joint("wrist", -1.4124, duration_s=0.5)
+
+    assert board.calls[-1] == (0.5, [[5, 1500]])
+    assert waits == [0.5]
+
+
+@pytest.mark.parametrize("stream_duration_s", [0.0, -0.1, float("nan"), True])
+def test_invalid_stream_duration_is_rejected(stream_duration_s: float) -> None:
+    with pytest.raises(ValueError):
+        RaspberryPiArm(
+            pwm_arm=PWMRobotArm(board=FakeBoard()),
+            stream_duration_s=stream_duration_s,
+        )
+
+
 @pytest.mark.parametrize(
     ("targets", "error"),
     [

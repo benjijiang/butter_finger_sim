@@ -17,10 +17,12 @@ RasAdapter5A V1.0 servo controller over UART.
 - Interactive GUI control with one slider per joint.
 - Smooth scripted motion using smoothstep interpolation.
 - Config-driven utility and emotional actions with deliberately expressive timing.
-- A non-blocking no-person idle scan, ready for future tracking hand-off.
 - Position control with gravity, a fixed 1/240 s time step, and deterministic
   stepping.
 - RGB rendering from a wrist-mounted `camera_link`.
+- Camera face tracking (simulation-only): follow a face with the base (pan),
+  wrist (tilt), and shoulder (stand-off), handing off to a full-range base
+  idle scan when no face is visible and reacquiring when one reappears.
 
 ## CAD geometry
 
@@ -54,7 +56,9 @@ butter-finger-sim/
 │   ├── poses.yaml           # named poses in calibrated radians
 │   ├── actions.yaml         # named action sequences in calibrated radians
 │   ├── idle.yaml            # simulation-only no-person scan behavior
-│   └── camera.yaml          # camera stream metadata and simulation projection
+│   ├── camera.yaml          # camera stream metadata and simulation projection
+│   ├── tracking.yaml        # simulation-only face-tracking control knobs
+│   └── voice.yaml           # Pi voice, wake, audio, and Realtime settings
 ├── models/
 │   ├── meshes/                      # SolidWorks-exported link meshes
 │   └── butter_finger_simple.urdf   # GENERATED from config/ — do not hand-edit
@@ -66,6 +70,13 @@ butter-finger-sim/
 │   ├── idle.py              # non-blocking fallback idle scan
 │   ├── camera.py            # optical-frame math and RGB rotation
 │   ├── config.py            # YAML config loader (sim + physical sections)
+│   ├── voice/               # optional Pi wake/audio/Realtime coordination
+│   ├── perception/          # simulation-only camera face tracking
+│   │   ├── detection.py         # face detectors (Haar + scripted)
+│   │   ├── sources.py           # image sources (webcam + sim camera)
+│   │   ├── tracker.py           # 3-DOF visual-servo control law
+│   │   ├── attention.py         # FaceFollower: track <-> idle-scan hand-off
+│   │   └── config.py            # tracking.yaml loader
 │   └── backends/
 │       ├── pybullet_arm.py      # simulation backend (runs on the sim machine)
 │       ├── pwm_robot_arm.py     # REAL hardware, PWM microseconds (Raspberry Pi)
@@ -78,7 +89,9 @@ butter-finger-sim/
 │   ├── run_action.py        # list/run actions with sim or real backend
 │   ├── idle_motion.py       # continuous slow no-person scan
 │   ├── emotion_showcase.py  # play emotions with sim or real backend
+│   ├── voice_chat.py        # Pi Bluetooth voice chat + emotional gestures
 │   ├── camera_snapshot.py   # render one simulated RGB frame
+│   ├── face_tracking.py     # camera face tracking (webcam or sim camera)
 │   ├── pi_test_pose.py      # REAL HARDWARE: joint-by-joint home-pose test
 │   └── pi_sweep_base.py     # REAL HARDWARE: base sweep around home
 ├── tests/                   # dependency-light; none require PyBullet or hardware
@@ -173,6 +186,80 @@ servo performance; test speed and load behavior cautiously on hardware.
 simulation it runs a slow idle scan between actions. On real hardware it only
 waits between gestures and does not stream `IdleController` targets.
 
+## Raspberry Pi voice chat
+
+`examples/voice_chat.py` is a Pi-oriented, hands-free voice assistant. Room
+audio stays local until PocketSphinx hears the exact phrase **“butter
+finger.”** It then opens one stateful OpenAI Realtime WebSocket session,
+uses semantic VAD for follow-up turns, streams the audible answer to the
+Bluetooth speaker, prints the matching transcript, and selects exactly one of
+the twenty conversational actions through the local
+`express_emotion(action)` function.
+
+The function schema contains only an action-name enum. Model-generated joint
+angles, PWM, unknown actions, additional arguments, duplicate calls, and
+queued gestures are rejected before `ActionRunner` can move the arm. The
+gesture runs at the same time as the spoken answer, while microphone upload is
+paused until both finish. The session closes and loses its conversation
+history after 60 seconds without user speech.
+
+Install the optional Pi dependencies in a Pi-specific virtual environment:
+
+```bash
+sudo apt install libportaudio2 portaudio19-dev
+python -m pip install -e '.[voice]'
+```
+
+Pair the speakerphone and select its bidirectional **HFP/HSP** profile. A2DP
+is playback-only and cannot supply the microphone. Inspect what PortAudio can
+actually open:
+
+```bash
+python examples/voice_chat.py --list-audio-devices
+python examples/voice_chat.py --device-name "Speaker Name" --audio-loopback 3
+python examples/voice_chat.py --device-name "Speaker Name" --wake-test \
+  --wake-threshold 1e-20
+```
+
+The input and output may be separate endpoint IDs:
+
+```bash
+python examples/voice_chat.py --input-device-id 4 --output-device-id 5 \
+  --audio-loopback 3
+```
+
+Diagnostics never open the arm or contact OpenAI. Once loopback and wake
+detection work, provide the API key through the process environment. It is
+never read from YAML or a `.env` file:
+
+```bash
+export OPENAI_API_KEY='your-api-key'
+
+# Full cloud conversation with a logging-only arm; no PWM is sent.
+python examples/voice_chat.py --device-name "Speaker Name" --dry-run
+
+# Lower-cost Realtime model.
+python examples/voice_chat.py --device-name "Speaker Name" --dry-run \
+  --model gpt-realtime-2.1-mini
+
+# Real arm: homes, moves to idle_ready, then exclusively owns the arm.
+python examples/voice_chat.py --device-name "Speaker Name" --confirm-hardware
+```
+
+Do not run face tracking, `idle_motion.py`, an action showcase, or any other
+arm process at the same time. On Ctrl-C, the voice process stops new turns,
+waits for an already validated gesture, returns home, closes audio and the
+WebSocket, and disconnects the arm. A Bluetooth disconnect is retried locally;
+a recoverable network failure closes the cloud session and returns to wake
+mode. If a selected device exposes only A2DP output, startup fails before
+`RaspberryPiArm` is constructed and explains that HFP/HSP must be enabled.
+
+OpenAI API usage is billed separately from a ChatGPT subscription. Both audio
+input/output tokens and the small tool-selection response consume API usage;
+the local wake detector and closed-session room audio do not. The default is
+`gpt-realtime-2.1`; select `gpt-realtime-2.1-mini` to reduce operating cost.
+The program prints token usage after every spoken reply.
+
 ## Simulation idle behavior
 
 `IdleController` reads `config/idle.yaml` and sends non-blocking targets for a
@@ -182,10 +269,19 @@ slow triangle-wave base scan around the full `idle_ready` posture:
 python examples/idle_motion.py
 ```
 
-This is only the no-person fallback. A future attention layer will stop
-calling `IdleController.update()` while a person is detected, command tracking
-targets from camera perception, then call `resume()` when the person is lost.
-Perception remains outside `ArmBackend`.
+This is the no-person fallback. The `perception` package's `FaceFollower`
+(see [Camera face tracking](#camera-face-tracking)) is the attention layer it
+was designed to pair with: it stops calling `IdleController.update()` while a
+face is detected, commands tracking targets, then calls `resume()` when the
+face is lost. The scan now sweeps the full base range (±1.5708 rad, ±90°) so a
+lost face can be reacquired anywhere in yaw. Perception remains outside
+`ArmBackend`.
+
+`resume()` defaults to restoring the whole `idle_ready` pose, including the
+base — right for a showcase or a cold start. Pass `from_position_rad` (and
+optionally `direction=-1`) to restart the sweep from the scan joint's current
+angle instead; that is what `FaceFollower` does so a lost face does not send
+the base snapping back to center.
 
 Named actions are inside the measured calibration domain and may be sent
 through `RaspberryPiArm`. The continuous `IdleController` scan remains
@@ -216,6 +312,49 @@ The configured `120°` native vertical FOV is provisional. PyBullet uses a
 pinhole projection and does not reproduce the physical camera's strong
 wide-angle/fisheye distortion. Replace the projection parameters only after
 checkerboard calibration provides measured intrinsics and distortion.
+
+## Camera face tracking
+
+The `perception` package makes the arm follow a face with its wrist camera.
+It is a **simulation-only** layer on top of the radians `ArmBackend`: it drives
+`PyBulletArm` and never commands real hardware. The pipeline is
+detect → control → arbitrate:
+
+- **Detection** (`perception/detection.py`): `HaarFaceDetector` (OpenCV's
+  bundled Haar cascade — no download) finds the largest face; `ScriptedFaceDetector`
+  returns preset detections for tests and a no-camera demo.
+- **Image source** (`perception/sources.py`): `WebcamSource` reads a local
+  camera via OpenCV/V4L2; `SimCameraSource` delegates to
+  `PyBulletArm.capture_rgb()`, so there is no second camera model.
+- **Control** (`perception/tracker.py`): `FaceTracker` is a proportional
+  3-DOF visual servo — the **base pans**, the **wrist tilts**, and the
+  **shoulder** adjusts stand-off from the apparent face size. Every target is
+  clamped into the simulation limits and slewed at most `max_step_rad` per step.
+- **Arbitration** (`perception/attention.py`): `FaceFollower` tracks while a
+  face is visible and, after a short grace period without one, hands off to the
+  full-range `IdleController` base scan until a face is reacquired. The
+  hand-off passes through a `returning` state: the posture joints ease back to
+  `idle_ready` at `return_rate_rad_s` (default 0.6 rad/s, matching the scan's
+  own speed) while the base *holds the bearing the face was last seen at*, and
+  the scan then continues from there in the direction the face was last
+  moving. Going straight to `resume()` instead meant one unbounded
+  `move_joints` — the only command in the stack not slew-limited — which on
+  hardware asks the board to cover the whole tracking excursion inside its
+  short streaming window.
+
+Gains, response signs, deadbands, and the target face size live in
+`config/tracking.yaml` (simulation-tuning knobs, not physical calibration; the
+`sign_*` values must not be trusted on hardware).
+
+```bash
+python examples/face_tracking.py                     # webcam + Haar (default)
+python examples/face_tracking.py --source sim --detector scripted   # no camera
+python examples/face_tracking.py --show              # also open the camera window
+```
+
+On Linux the webcam uses V4L2 (`/dev/video0`); ensure your user is in the
+`video` group. If the arm drives the face away from center, flip the matching
+`sign_*` in `config/tracking.yaml`.
 
 ## Real hardware (Raspberry Pi only)
 
@@ -276,6 +415,7 @@ python examples/run_action.py happy
 python examples/idle_motion.py
 python examples/emotion_showcase.py happy curious sad surprised
 python examples/camera_snapshot.py
+python examples/face_tracking.py --source sim --detector scripted
 ```
 
 ## Limitations of simulating cheap open-loop hobby servos
@@ -317,3 +457,7 @@ real dynamic behavior.
    are implemented.
 6. ~~Add camera rendering from `camera_link`~~ — RGB capture implemented with
    provisional pinhole intrinsics; physical camera calibration remains.
+7. ~~Add camera face tracking~~ — simulation-only `perception` package
+   (detection, 3-DOF visual servo, webcam/sim sources) with a `FaceFollower`
+   attention layer that hands off to the full-range idle scan; tuning and a
+   real-hardware follow path remain.

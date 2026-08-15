@@ -1,0 +1,28 @@
+# Raspberry Pi voice-chat configuration. Optional device IDs override the
+# name-substring selector. The API key is intentionally never stored here.
+voice:
+  wake:
+    phrase: butter finger
+    # PocketSphinx keyword thresholds are probabilities; lower is stricter.
+    threshold: 1.0e-20
+    sample_rate_hz: 16000
+
+  audio:
+    # Set this to a distinctive Bluetooth speakerphone name substring on Pi.
+    device_name: null
+    input_device_id: null
+    output_device_id: null
+    api_sample_rate_hz: 24000
+    chunk_ms: 20
+    reconnect_delay_s: 2.0
+
+  realtime:
+    model: gpt-realtime-2.1
+    voice: marin
+    reasoning_effort: low
+    vad_eagerness: auto
+    inactivity_timeout_s: 60.0
+
+  arm:
+    idle_pose: idle_ready
+    idle_move_duration_s: 1.5

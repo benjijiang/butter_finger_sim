@@ -84,6 +84,8 @@ python examples/idle_motion.py
 python examples/emotion_showcase.py happy curious sad surprised
 python examples/emotion_showcase.py --all
 python examples/camera_snapshot.py
+python examples/face_tracking.py
+python examples/face_tracking.py --source sim --detector scripted
 ```
 
 - `view_robot.py` — displays the arm; close the PyBullet window to exit.
@@ -97,12 +99,21 @@ python examples/camera_snapshot.py
   GUI. In addition to the utility actions, twenty camera-as-face gestures cover
   greeting, agreement, positive, reflective, low-energy, and reactive moods.
 - `idle_motion.py` — continuously runs the slow no-person base scan around the
-  `idle_ready` posture. A future attention layer will replace it with camera
-  tracking whenever a person is detected.
+  `idle_ready` posture (now the full base ±90° range). `face_tracking.py` is
+  the attention layer that switches this out for camera tracking when a face is
+  detected.
 - `emotion_showcase.py` — plays selected emotional actions in order, or all
   twenty with `--all`, with a short idle scan between actions.
 - `camera_snapshot.py` — renders the wrist camera in DIRECT mode and writes
   `camera_snapshot.png`; add `--gui` to open PyBullet during capture.
+- `face_tracking.py` — simulation-only camera face tracking: the base pans, the
+  wrist tilts, and the shoulder adjusts stand-off to keep a face centered, then
+  falls back to the idle base scan when the face is lost. Defaults to
+  `--source webcam --detector haar` (a real camera via OpenCV/V4L2); use
+  `--source sim --detector scripted` to run the whole loop with no camera, and
+  `--show` to open the camera preview window. On Linux the webcam needs V4L2
+  access (`/dev/video0`; your user in the `video` group). If the arm drives the
+  face away from center, flip the matching `sign_*` in `config/tracking.yaml`.
 - There is also `python examples/go_home.py`, which moves the arm to the
   simulated reference pose.
 
@@ -149,6 +160,44 @@ The real arm has no verified shaft-angle feedback. Returned positions are
 last-command estimates, and the two-point mapping does not validate speed,
 torque, backlash, or behavior under load.
 
+### Pi Bluetooth voice assistant
+
+Voice chat is intentionally not part of the simulation dependency set.
+Create or activate the Pi's own virtual environment, then install:
+
+```bash
+sudo apt install libportaudio2 portaudio19-dev
+python -m pip install -e '.[voice]'
+```
+
+The paired Bluetooth device must be in its bidirectional HFP/HSP
+speakerphone/headset profile. Verify input and output before touching the arm:
+
+```bash
+python examples/voice_chat.py --list-audio-devices
+python examples/voice_chat.py --device-name "Speaker Name" --audio-loopback 3
+python examples/voice_chat.py --device-name "Speaker Name" --wake-test
+```
+
+Then set `OPENAI_API_KEY` in the environment and run the logging-only path:
+
+```bash
+export OPENAI_API_KEY='your-api-key'
+python examples/voice_chat.py --device-name "Speaker Name" --dry-run
+```
+
+Only after wake, semantic turn detection, streamed speech/transcript,
+emotion selection, and token reporting all work should the real arm be used:
+
+```bash
+python examples/voice_chat.py --device-name "Speaker Name" --confirm-hardware
+```
+
+Voice chat exclusively owns the arm. Stop face tracking, idle scanning, and
+other motion examples first. See the Raspberry Pi voice-chat section in
+`README.md` for endpoint-ID overrides, threshold tuning, the lower-cost model,
+failure recovery, and shutdown behavior.
+
 ## 7. Deactivate / reactivate the environment
 
 ```bash
@@ -180,3 +229,6 @@ command-line developer tools with `xcode-select --install`, and retry inside
 | GUI fails with OpenGL/GLX errors (Linux) | Install `libgl1` and `mesa-utils`; on NVIDIA, check `nvidia-smi` shows the driver |
 | Camera snapshot is empty or points the wrong way | Confirm `config/geometry.yaml` camera offset and the `+Y` forward / `-X` native-up convention |
 | `pip install pybullet` compile error | Upgrade pip/setuptools/wheel; Linux: install `build-essential python3-dev`; Mac: `xcode-select --install`; retry inside `.venv` |
+| Bluetooth device has output but no input | Switch it from A2DP to its HFP/HSP speakerphone/headset profile, then rerun `--list-audio-devices` |
+| `sounddevice` cannot open an endpoint | Install PortAudio, verify the endpoint IDs with `--list-audio-devices`, and run `--audio-loopback 3` |
+| Wake phrase is missed or triggers too often | Run `--wake-test`; tune `--wake-threshold` for the actual room and microphone |
