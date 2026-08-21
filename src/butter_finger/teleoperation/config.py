@@ -8,7 +8,7 @@ from typing import Any
 
 import yaml
 
-from butter_finger.config import CONFIG_DIR
+from butter_finger.config import CONFIG_DIR, JOINT_NAMES
 from butter_finger.teleoperation.types import VirtualEETarget
 
 TELEOPERATION_CONFIG_PATH = CONFIG_DIR / "teleoperation.yaml"
@@ -76,6 +76,28 @@ class WorkspaceConfig:
 
 
 @dataclass(frozen=True)
+class IKConfig:
+    """Pure-math Stage 2 solver and provisional dry-run slew parameters."""
+
+    anchor_pose: str
+    end_effector: str
+    position_tolerance_m: float
+    pitch_tolerance_rad: float
+    orientation_weight_m_per_rad: float
+    min_forward_component: float
+    max_iterations: int
+    finite_difference_step_rad: float
+    max_iteration_step_rad: float
+    initial_damping: float
+    min_damping: float
+    max_damping: float
+    max_backtracking_steps: int
+    max_solution_jump_rad: float
+    max_slew_dt_s: float
+    joint_rate_limits_rad_s: dict[str, float]
+
+
+@dataclass(frozen=True)
 class TeleoperationConfig:
     webcam: WebcamConfig
     hand_tracking: HandTrackingConfig
@@ -83,6 +105,7 @@ class TeleoperationConfig:
     mapping: MappingConfig
     filter_cutoff_hz: float
     workspace: WorkspaceConfig
+    ik: IKConfig | None = None
 
 
 def _mapping(value: Any, label: str) -> dict[str, Any]:
@@ -113,6 +136,12 @@ def _positive_int(value: Any, label: str) -> int:
     return value
 
 
+def _nonempty_string(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{label} must be a non-empty string")
+    return value
+
+
 def _probability(value: Any, label: str) -> float:
     result = _number(value, label)
     if not 0.0 <= result <= 1.0:
@@ -128,10 +157,108 @@ def _range(value: Any, label: str) -> RangeLimit:
     )
 
 
+def _load_ik_config(teleop: dict[str, Any]) -> IKConfig:
+    """Load Stage 2-only values; Stage 0/1 callers may skip this section."""
+    ik_raw = _mapping(teleop.get("ik"), "teleoperation.ik")
+    rates_raw = _mapping(
+        ik_raw.get("joint_rate_limits_rad_s"),
+        "teleoperation.ik.joint_rate_limits_rad_s",
+    )
+    if set(rates_raw) != set(JOINT_NAMES):
+        raise ValueError(
+            "teleoperation.ik.joint_rate_limits_rad_s must contain exactly "
+            f"{list(JOINT_NAMES)}"
+        )
+
+    min_forward_component = _number(
+        ik_raw.get("min_forward_component"),
+        "teleoperation.ik.min_forward_component",
+    )
+    if not 0.0 < min_forward_component < 1.0:
+        raise ValueError(
+            "teleoperation.ik.min_forward_component must be between 0 and 1"
+        )
+    min_damping = _positive(
+        ik_raw.get("min_damping"), "teleoperation.ik.min_damping"
+    )
+    initial_damping = _positive(
+        ik_raw.get("initial_damping"), "teleoperation.ik.initial_damping"
+    )
+    max_damping = _positive(
+        ik_raw.get("max_damping"), "teleoperation.ik.max_damping"
+    )
+    if not min_damping <= initial_damping <= max_damping:
+        raise ValueError(
+            "teleoperation.ik damping must satisfy "
+            "min_damping <= initial_damping <= max_damping"
+        )
+
+    return IKConfig(
+        anchor_pose=_nonempty_string(
+            ik_raw.get("anchor_pose"), "teleoperation.ik.anchor_pose"
+        ),
+        end_effector=_nonempty_string(
+            ik_raw.get("end_effector"), "teleoperation.ik.end_effector"
+        ),
+        position_tolerance_m=_positive(
+            ik_raw.get("position_tolerance_m"),
+            "teleoperation.ik.position_tolerance_m",
+        ),
+        pitch_tolerance_rad=_positive(
+            ik_raw.get("pitch_tolerance_rad"),
+            "teleoperation.ik.pitch_tolerance_rad",
+        ),
+        orientation_weight_m_per_rad=_positive(
+            ik_raw.get("orientation_weight_m_per_rad"),
+            "teleoperation.ik.orientation_weight_m_per_rad",
+        ),
+        min_forward_component=min_forward_component,
+        max_iterations=_positive_int(
+            ik_raw.get("max_iterations"), "teleoperation.ik.max_iterations"
+        ),
+        finite_difference_step_rad=_positive(
+            ik_raw.get("finite_difference_step_rad"),
+            "teleoperation.ik.finite_difference_step_rad",
+        ),
+        max_iteration_step_rad=_positive(
+            ik_raw.get("max_iteration_step_rad"),
+            "teleoperation.ik.max_iteration_step_rad",
+        ),
+        initial_damping=initial_damping,
+        min_damping=min_damping,
+        max_damping=max_damping,
+        max_backtracking_steps=_positive_int(
+            ik_raw.get("max_backtracking_steps"),
+            "teleoperation.ik.max_backtracking_steps",
+        ),
+        max_solution_jump_rad=_positive(
+            ik_raw.get("max_solution_jump_rad"),
+            "teleoperation.ik.max_solution_jump_rad",
+        ),
+        max_slew_dt_s=_positive(
+            ik_raw.get("max_slew_dt_s"), "teleoperation.ik.max_slew_dt_s"
+        ),
+        joint_rate_limits_rad_s={
+            joint: _positive(
+                rates_raw.get(joint),
+                f"teleoperation.ik.joint_rate_limits_rad_s.{joint}",
+            )
+            for joint in JOINT_NAMES
+        },
+    )
+
+
 def load_teleoperation_config(
     path: Path = TELEOPERATION_CONFIG_PATH,
+    *,
+    include_ik: bool | None = None,
 ) -> TeleoperationConfig:
-    """Load Stage 0/1 knobs without importing OpenCV or MediaPipe."""
+    """Load teleoperation input and optionally require Stage 2 IK settings.
+
+    The default auto-loads IK when the section exists while retaining support
+    for legacy Stage 0/1 files. Passing ``True`` requires IK; passing ``False``
+    deliberately skips it.
+    """
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     root = _mapping(raw, "teleoperation.yaml")
     teleop = _mapping(root.get("teleoperation"), "teleoperation")
@@ -235,6 +362,12 @@ def load_teleoperation_config(
         if not limit.contains(value):
             raise ValueError(f"initial_target.{axis} is outside workspace.{axis}")
 
+    ik = (
+        _load_ik_config(teleop)
+        if include_ik is True or (include_ik is None and "ik" in teleop)
+        else None
+    )
+
     return TeleoperationConfig(
         webcam=webcam,
         hand_tracking=tracking,
@@ -244,4 +377,5 @@ def load_teleoperation_config(
             filter_raw.get("cutoff_hz"), "teleoperation.filter.cutoff_hz"
         ),
         workspace=workspace,
+        ik=ik,
     )

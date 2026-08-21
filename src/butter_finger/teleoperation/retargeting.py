@@ -92,6 +92,7 @@ class VirtualTargetController:
         self._last_update_s: float | None = None
         self._clamped_axes: tuple[str, ...] = ()
         self._last_pinch_ratio: float | None = None
+        self._motion_eligible = False
 
     @property
     def state(self) -> TrackingState:
@@ -109,6 +110,10 @@ class VirtualTargetController:
         """Advance from a fresh result, or an empty sequence when none is fresh."""
         if not math.isfinite(now_s):
             raise ValueError("now_s must be finite")
+        # This is deliberately per-frame, not a latched clutch property. A
+        # missing owner result or the first release-debounce frame must freeze
+        # Stage 2 immediately even while the public state remains CLUTCHED.
+        self._motion_eligible = False
         if self._last_update_s is not None and now_s < self._last_update_s:
             return self._snapshot()
         self._last_update_s = now_s
@@ -213,6 +218,7 @@ class VirtualTargetController:
         self._raw_target, self._clamped_axes = self._clamp(requested)
         self._filter.update(self._raw_target)
         self._state = TrackingState.CLUTCHED
+        self._motion_eligible = True
 
     def _update_unowned(self, features: list[HandFeatures], now_s: float) -> None:
         if self._rearm_required:
@@ -278,6 +284,7 @@ class VirtualTargetController:
         self._clamped_axes = ()
         self._ever_clutched = True
         self._state = TrackingState.CLUTCHED
+        self._motion_eligible = True
         self._engage_counts.clear()
 
     def _clamp(
@@ -306,4 +313,5 @@ class VirtualTargetController:
             owner_handedness=self._owner_handedness,
             pinch_ratio=self._last_pinch_ratio,
             clamped_axes=self._clamped_axes,
+            motion_eligible=self._motion_eligible,
         )

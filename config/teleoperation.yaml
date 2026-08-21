@@ -1,9 +1,8 @@
-# Butter Finger Stage 0/1 hand teleoperation configuration.
+# Butter Finger Stage 0/1 input and Stage 2 IK dry-run configuration.
 #
-# These workspace values are only a virtual-target visualization envelope.
-# They are NOT a validated reachable workspace and must not be used to move
-# either the simulated or physical arm. Stage 2 will replace them with an
-# FK/IK-derived workspace.
+# The provisional workspace remains the Stage 1 input envelope for Stage 2.
+# It is NOT a validated reachable workspace: dry-run IK separately reports
+# convergence, and none of these values may be used to move an arm.
 
 teleoperation:
   webcam:
@@ -34,6 +33,31 @@ teleoperation:
 
   filter:
     cutoff_hz: 3.0
+
+  # Stage 2 is still dry-run only. These values make the pure-math solver and
+  # diagnostic slew limiter deterministic; they are not measured hardware
+  # safety limits and must not be forwarded to RaspberryPiArm.
+  ik:
+    anchor_pose: idle_ready
+    end_effector: camera_link
+    position_tolerance_m: 0.002
+    pitch_tolerance_rad: 0.035
+    orientation_weight_m_per_rad: 0.08
+    min_forward_component: 0.2
+    max_iterations: 80
+    finite_difference_step_rad: 0.00001
+    max_iteration_step_rad: 0.08
+    initial_damping: 0.001
+    min_damping: 0.000001
+    max_damping: 0.1
+    max_backtracking_steps: 6
+    max_solution_jump_rad: 0.75
+    max_slew_dt_s: 0.10
+    joint_rate_limits_rad_s:
+      base: 0.35
+      shoulder: 0.35
+      elbow: 0.35
+      wrist: 0.35
 
   provisional_workspace:
     x_m: {min: 0.08, max: 0.26}

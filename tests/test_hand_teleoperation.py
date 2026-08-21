@@ -166,8 +166,22 @@ def test_relative_mapping_directions_and_release_hold() -> None:
         released = controller.update(
             [hand(timestamp, pinch_ratio=0.6)], timestamp
         )
+        assert released.motion_eligible is False
     assert released.state is TrackingState.HOLD
     assert released.target == held_target
+
+
+def test_release_debounce_and_brief_owner_gap_freeze_stage2_immediately() -> None:
+    controller = VirtualTargetController(load_teleoperation_config())
+    engage(controller)
+
+    releasing = controller.update([hand(0.04, pinch_ratio=0.6)], 0.04)
+    missing = controller.update([], 0.05)
+
+    assert releasing.state is TrackingState.CLUTCHED
+    assert releasing.motion_eligible is False
+    assert missing.state is TrackingState.CLUTCHED
+    assert missing.motion_eligible is False
 
 
 def test_same_frame_tie_uses_higher_confidence() -> None:
@@ -297,3 +311,63 @@ def test_default_config_is_camera_only_and_provisional() -> None:
     assert config.hand_tracking.num_hands == 2
     assert config.clutch.engage_ratio < config.clutch.release_ratio
     assert config.filter_cutoff_hz == pytest.approx(3.0)
+    assert config.ik.anchor_pose == "idle_ready"
+    assert config.ik.end_effector == "camera_link"
+    assert config.ik.position_tolerance_m == pytest.approx(0.002)
+    assert config.ik.pitch_tolerance_rad == pytest.approx(0.035)
+    assert set(config.ik.joint_rate_limits_rad_s) == {
+        "base",
+        "shoulder",
+        "elbow",
+        "wrist",
+    }
+
+
+def test_stage01_can_load_legacy_config_without_ik(tmp_path: Path) -> None:
+    raw = yaml.safe_load(
+        (REPO_ROOT / "config" / "teleoperation.yaml").read_text(encoding="utf-8")
+    )
+    del raw["teleoperation"]["ik"]
+    path = tmp_path / "legacy-teleoperation.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    stage01 = load_teleoperation_config(path)
+
+    assert stage01.ik is None
+    assert stage01.workspace.initial_target.x_m == pytest.approx(0.18)
+    with pytest.raises(ValueError, match="teleoperation.ik"):
+        load_teleoperation_config(path, include_ik=True)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("min_forward_component", 1.0, "between 0 and 1"),
+        ("max_iterations", 0, "positive integer"),
+        ("max_slew_dt_s", float("nan"), "finite"),
+    ],
+)
+def test_config_rejects_invalid_ik_values(
+    tmp_path: Path, field: str, value, message: str
+) -> None:
+    raw = yaml.safe_load(
+        (REPO_ROOT / "config" / "teleoperation.yaml").read_text(encoding="utf-8")
+    )
+    raw["teleoperation"]["ik"][field] = value
+    path = tmp_path / "teleoperation.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        load_teleoperation_config(path)
+
+
+def test_config_rejects_incomplete_ik_joint_rate_map(tmp_path: Path) -> None:
+    raw = yaml.safe_load(
+        (REPO_ROOT / "config" / "teleoperation.yaml").read_text(encoding="utf-8")
+    )
+    del raw["teleoperation"]["ik"]["joint_rate_limits_rad_s"]["wrist"]
+    path = tmp_path / "teleoperation.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must contain exactly"):
+        load_teleoperation_config(path)

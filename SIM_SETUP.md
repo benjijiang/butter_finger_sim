@@ -63,8 +63,8 @@ Notes:
   `python -m pip install --upgrade pip setuptools wheel` and retry inside
   `.venv`. On Linux also install `build-essential` and `python3-dev`.
 
-For the camera-only hand teleoperation Stage 0/1 tools, also install the
-separate optional dependency set and download the checksum-verified model:
+For the hand teleoperation Stage 0/1 tools and Stage 2 IK dry run, also install
+the separate optional dependency set and download the checksum-verified model:
 
 ```bash
 python -m pip install -e '.[teleop]'
@@ -96,6 +96,7 @@ python examples/face_tracking.py
 python examples/face_tracking.py --source sim --detector scripted
 python examples/hand_landmarks.py
 python examples/hand_target.py
+python examples/hand_teleoperation.py --dry-run
 ```
 
 - `view_robot.py` — displays the arm; close the PyBullet window to exit.
@@ -129,6 +130,11 @@ python examples/hand_target.py
 - `hand_target.py` — Stage 1 pinch-clutched virtual `[x,y,z,pitch]` display.
   Its configured workspace is provisional visualization data; no simulated or
   physical robot moves.
+- `hand_teleoperation.py --dry-run` — Stage 2 maps the relative hand target
+  into a fixed `idle_ready` task frame, solves pure-math CAD FK/IK, and shows
+  provisional rate-limited joint candidates. It imports no arm backend and
+  never moves a simulated or physical robot. `SOLVED` is not a hardware safety
+  claim; collision and physical validation remain outstanding.
 - There is also `python examples/go_home.py`, which moves the arm to the
   simulated reference pose.
 

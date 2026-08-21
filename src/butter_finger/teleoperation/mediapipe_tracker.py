@@ -23,7 +23,7 @@ def _import_mediapipe():
         import mediapipe as mp
     except ImportError as exc:
         raise RuntimeError(
-            "MediaPipe is not installed. Install the Stage 0/1 extras with:\n"
+            "MediaPipe is not installed. Install the hand-teleoperation extras with:\n"
             "    python -m pip install -e '.[teleop]'"
         ) from exc
     return mp
@@ -39,7 +39,10 @@ class MediaPipeHandTracker:
     ) -> None:
         from butter_finger.teleoperation.config import load_teleoperation_config
 
-        self._config = config or load_teleoperation_config().hand_tracking
+        self._config = (
+            config
+            or load_teleoperation_config(include_ik=False).hand_tracking
+        )
         self._model_path = Path(model_path)
         if not self._model_path.is_file():
             raise RuntimeError(

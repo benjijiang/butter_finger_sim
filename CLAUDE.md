@@ -201,12 +201,14 @@ on the real arm; verify them with that example's `--dry-run` before moving.
     imports. Only the 20 conversational action names may cross the model tool
     boundary; never accept model joint angles or PWM. Voice chat exclusively
     owns the arm and must not run beside face tracking or idle scanning.
-12. Hand teleoperation Stage 0/1 lives in `butter_finger.teleoperation` and is
-    camera-only. It may produce a provisional `[x,y,z,pitch]` value but must
-    not directly import or construct `ArmBackend`, PyBullet, RaspberryPiArm,
-    or PWM.
-    `config/teleoperation.yaml` is visualization tuning, not a validated robot
-    workspace. MediaPipe and OpenCV remain optional and lazily imported.
+12. Hand teleoperation lives in `butter_finger.teleoperation` and must not
+    directly import or construct `ArmBackend`, PyBullet, RaspberryPiArm, or
+    PWM. Stage 0/1 produces a provisional `[x,y,z,pitch]`; Stage 2 anchors its
+    relative delta at the `idle_ready` camera pose and runs pure-NumPy CAD
+    FK/IK plus a diagnostic slew limiter. `SOLVED` means configuration-domain
+    convergence only, never hardware safety: there is no collision model,
+    physical transform validation, networking, or command path. MediaPipe and
+    OpenCV remain optional and lazily imported.
 
 ## Safety rules
 
@@ -270,3 +272,7 @@ simplified convex meshes. Joint names and the control API must not change.
 - [x] Add camera-only hand teleoperation Stage 0/1 (2026-08-15): asynchronous
       two-hand MediaPipe landmarks, first-pincher ownership, loss/rearm logic,
       and filtered provisional virtual `[x,y,z,pitch]`; no arm backend or IK.
+- [x] Add hand teleoperation Stage 2 dry run (2026-08-21): fixed idle-camera
+      task frame, pure-NumPy CAD FK/IK, deterministic unreachable/branch
+      diagnostics, and rate-limited joint candidates; no arm backend,
+      PyBullet, networking, PWM, collision claim, or physical motion.
