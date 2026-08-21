@@ -41,7 +41,23 @@ without the physical arm nearby. This is a functional approximate model,
   SG90 (3×); shoulder = LD-1501MG (larger, higher-torque metal-gear servo).
   Datasheet PWM-to-angle specs are deliberately NOT recorded anywhere in
   this repo — calibration must be measured, never taken from a datasheet.
-- PWM port mapping: base=1, shoulder=3, elbow=4, wrist=5; ports 2 and 6 unused.
+- PWM port mapping (rewired 2026-08-21), servo per port:
+
+  | Port | Joint | Servo | Status |
+  |---|---|---|---|
+  | 1 | shoulder | LD-1501MG | in use |
+  | 2 | base | SG90 | in use |
+  | 3 | — | — | unused, faulty |
+  | 4 | — | — | unused, faulty |
+  | 5 | elbow | SG90 | in use |
+  | 6 | wrist | SG90 | in use |
+
+  The original wiring was base=1, shoulder=3, elbow=4, wrist=5 with 2 and 6
+  unused. Ports 3 and 4 tested faulty on the real board (2026-08-21), so the
+  joints moved onto 1/2/5/6, and base and shoulder were then swapped so the
+  shoulder's larger LD-1501MG sits on port 1. Rewiring changes no calibration
+  data: the pulse limits, home values, and radian mappings belong to the
+  servos, which stayed on their own joints.
 - Recorded home PWM (µs): base 1500, shoulder 2200, elbow 2490, wrist 1400.
 - Verified pulse ranges (µs): base/elbow/wrist 505–2495 (confirmed by the
   user 2026-07-13); shoulder 1200–2220. These are the authoritative limits;

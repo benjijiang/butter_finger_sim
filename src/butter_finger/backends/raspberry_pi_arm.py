@@ -4,7 +4,8 @@ Data path:
 
     Raspberry Pi 5 --UART--> Hiwonder RasAdapter5A V1.0 --PWM--> servos
 
-    PWM ports: base=1, shoulder=3, elbow=4, wrist=5 (2 and 6 unused).
+    PWM ports: shoulder=1, base=2, elbow=5, wrist=6 (3 and 4 unused because
+    they tested faulty on the real board 2026-08-21).
 
 The adapter only interpolates within measured two-point calibration ranges.
 It never clamps or extrapolates. The hardware is open-loop, so reported

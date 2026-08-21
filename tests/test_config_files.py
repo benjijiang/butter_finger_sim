@@ -43,12 +43,12 @@ def camera_cfg() -> dict:
 
 def test_confirmed_pwm_port_mapping(joints_cfg: dict) -> None:
     assert joints_cfg["physical"]["pwm_ports"] == {
-        "base": 1,
-        "shoulder": 3,
-        "elbow": 4,
-        "wrist": 5,
+        "base": 2,
+        "shoulder": 1,
+        "elbow": 5,
+        "wrist": 6,
     }
-    assert joints_cfg["physical"]["unused_ports"] == [2, 6]
+    assert joints_cfg["physical"]["unused_ports"] == [3, 4]
 
 
 def test_recorded_home_pwm(joints_cfg: dict) -> None:

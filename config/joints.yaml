@@ -30,13 +30,22 @@ physical:
     elbow: "SG90"
     wrist: "SG90"
 
-  # Confirmed PWM port mapping. Ports 2 and 6 are unused.
+  # PWM port mapping, rewired 2026-08-21. The original 1/3/4/5 wiring was
+  # abandoned because ports 3 and 4 tested faulty on the real board; base and
+  # shoulder were then swapped so the shoulder's larger servo sits on port 1.
+  #
+  #   port 1 -> shoulder  (LD-1501MG)
+  #   port 2 -> base      (SG90)
+  #   port 3 -> unused    (faulty)
+  #   port 4 -> unused    (faulty)
+  #   port 5 -> elbow     (SG90)
+  #   port 6 -> wrist     (SG90)
   pwm_ports:
-    base: 1
-    shoulder: 3
-    elbow: 4
-    wrist: 5
-  unused_ports: [2, 6]
+    base: 2
+    shoulder: 1
+    elbow: 5
+    wrist: 6
+  unused_ports: [3, 4]
 
   # Recorded physical home signals in microseconds (historical calibration
   # data from the original Butter_Finger control code).
