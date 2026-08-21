@@ -201,6 +201,12 @@ on the real arm; verify them with that example's `--dry-run` before moving.
     imports. Only the 20 conversational action names may cross the model tool
     boundary; never accept model joint angles or PWM. Voice chat exclusively
     owns the arm and must not run beside face tracking or idle scanning.
+12. Hand teleoperation Stage 0/1 lives in `butter_finger.teleoperation` and is
+    camera-only. It may produce a provisional `[x,y,z,pitch]` value but must
+    not directly import or construct `ArmBackend`, PyBullet, RaspberryPiArm,
+    or PWM.
+    `config/teleoperation.yaml` is visualization tuning, not a validated robot
+    workspace. MediaPipe and OpenCV remain optional and lazily imported.
 
 ## Safety rules
 
@@ -261,3 +267,6 @@ simplified convex meshes. Joint names and the control API must not change.
       per reply, half-duplex turn locking, reconnection, dry-run diagnostics,
       and safe homing/cleanup. Physical Bluetooth and live API acceptance
       remain to be run on the Pi.
+- [x] Add camera-only hand teleoperation Stage 0/1 (2026-08-15): asynchronous
+      two-hand MediaPipe landmarks, first-pincher ownership, loss/rearm logic,
+      and filtered provisional virtual `[x,y,z,pitch]`; no arm backend or IK.

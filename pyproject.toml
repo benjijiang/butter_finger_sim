@@ -15,7 +15,19 @@ dependencies = [
 
 [project.optional-dependencies]
 # PyBullet is only installed on the simulation machine (Linux primary, Mac fallback).
-sim = ["pybullet>=3.2.5,<4", "Pillow>=12.3,<13", "opencv-python>=4.8,<5"]
+sim = [
+    "pybullet>=3.2.5,<4",
+    "Pillow>=12.3,<13",
+    "opencv-contrib-python>=5,<6",
+]
+# MediaPipe 0.10.35 itself uses opencv-contrib-python. Declaring the same
+# distribution here and in `sim` avoids installing both mutually-overlapping
+# OpenCV wheels into one environment.
+teleop = [
+    "mediapipe>=0.10.35,<0.11",
+    "opencv-contrib-python>=5,<6",
+    "certifi>=2024.2.2",
+]
 voice = [
     "websocket-client>=1.7,<2",
     "sounddevice>=0.4.6,<1",

@@ -8,3 +8,6 @@ __pycache__/
 
 # PyBullet source tarballs are installed per-machine, never committed.
 pybullet-*.tar.gz
+
+# Downloaded MediaPipe task assets are machine-local, not source files.
+models/mediapipe/

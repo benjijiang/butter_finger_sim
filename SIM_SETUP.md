@@ -63,6 +63,14 @@ Notes:
   `python -m pip install --upgrade pip setuptools wheel` and retry inside
   `.venv`. On Linux also install `build-essential` and `python3-dev`.
 
+For the camera-only hand teleoperation Stage 0/1 tools, also install the
+separate optional dependency set and download the checksum-verified model:
+
+```bash
+python -m pip install -e '.[teleop]'
+python scripts/download_hand_landmarker.py
+```
+
 ## 4. Generate the URDF and run the tests
 
 ```bash
@@ -86,6 +94,8 @@ python examples/emotion_showcase.py --all
 python examples/camera_snapshot.py
 python examples/face_tracking.py
 python examples/face_tracking.py --source sim --detector scripted
+python examples/hand_landmarks.py
+python examples/hand_target.py
 ```
 
 - `view_robot.py` — displays the arm; close the PyBullet window to exit.
@@ -114,6 +124,11 @@ python examples/face_tracking.py --source sim --detector scripted
   `--show` to open the camera preview window. On Linux the webcam needs V4L2
   access (`/dev/video0`; your user in the `video` group). If the arm drives the
   face away from center, flip the matching `sign_*` in `config/tracking.yaml`.
+- `hand_landmarks.py` — Stage 0 webcam-only viewer for up to two hands and all
+  21 MediaPipe landmarks. It never opens an arm backend.
+- `hand_target.py` — Stage 1 pinch-clutched virtual `[x,y,z,pitch]` display.
+  Its configured workspace is provisional visualization data; no simulated or
+  physical robot moves.
 - There is also `python examples/go_home.py`, which moves the arm to the
   simulated reference pose.
 

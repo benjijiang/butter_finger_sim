@@ -58,6 +58,7 @@ butter-finger-sim/
 │   ├── idle.yaml            # simulation-only no-person scan behavior
 │   ├── camera.yaml          # camera stream metadata and simulation projection
 │   ├── tracking.yaml        # simulation-only face-tracking control knobs
+│   ├── teleoperation.yaml   # camera-only Stage 0/1 hand-target settings
 │   └── voice.yaml           # Pi voice, wake, audio, and Realtime settings
 ├── models/
 │   ├── meshes/                      # SolidWorks-exported link meshes
@@ -77,6 +78,7 @@ butter-finger-sim/
 │   │   ├── tracker.py           # 3-DOF visual-servo control law
 │   │   ├── attention.py         # FaceFollower: track <-> idle-scan hand-off
 │   │   └── config.py            # tracking.yaml loader
+│   ├── teleoperation/       # hand landmarks + virtual EE target; no arm access
 │   └── backends/
 │       ├── pybullet_arm.py      # simulation backend (runs on the sim machine)
 │       ├── pwm_robot_arm.py     # REAL hardware, PWM microseconds (Raspberry Pi)
@@ -92,6 +94,8 @@ butter-finger-sim/
 │   ├── voice_chat.py        # Pi Bluetooth voice chat + emotional gestures
 │   ├── camera_snapshot.py   # render one simulated RGB frame
 │   ├── face_tracking.py     # camera face tracking (webcam or sim camera)
+│   ├── hand_landmarks.py    # Stage 0: webcam 21-landmark viewer; no arm
+│   ├── hand_target.py       # Stage 1: filtered virtual EE target; no arm
 │   ├── pi_test_pose.py      # REAL HARDWARE: joint-by-joint home-pose test
 │   └── pi_sweep_base.py     # REAL HARDWARE: base sweep around home
 ├── tests/                   # dependency-light; none require PyBullet or hardware
@@ -356,6 +360,36 @@ On Linux the webcam uses V4L2 (`/dev/video0`); ensure your user is in the
 `video` group. If the arm drives the face away from center, flip the matching
 `sign_*` in `config/tracking.yaml`.
 
+## Hand teleoperation Stage 0/1 (camera only)
+
+The first two hand-teleoperation stages deliberately stop before IK or robot
+control. They never construct `PyBulletArm`, `RaspberryPiArm`, or the PWM
+driver: Stage 0 displays MediaPipe's 21 landmarks, while Stage 1 converts a
+pinch-clutched relative hand motion into a provisional `[x,y,z,pitch]` target.
+
+Install the optional host dependencies and verified model asset:
+
+```bash
+python -m pip install -e '.[teleop]'
+python scripts/download_hand_landmarker.py
+```
+
+Then run:
+
+```bash
+python examples/hand_landmarks.py
+python examples/hand_target.py
+python examples/hand_target.py --log-jsonl /tmp/hand-targets.jsonl
+```
+
+Both previews are mirrored by default. In Stage 1, pinch for three frames to
+take control, move the virtual target, and release for three frames to hold.
+If the controlling hand is lost, show an open hand before pinching again.
+`config/teleoperation.yaml` contains the gains, 3 Hz low-pass, clutch
+thresholds, and a **visualization-only** workspace. It is not a claim of robot
+reachability and must not be connected to an arm backend; FK/IK and validated
+safety limits belong to a later stage.
+
 ## Real hardware (Raspberry Pi only)
 
 Use `RaspberryPiArm` for normal application code in radians. It wraps
@@ -416,6 +450,10 @@ python examples/idle_motion.py
 python examples/emotion_showcase.py happy curious sad surprised
 python examples/camera_snapshot.py
 python examples/face_tracking.py --source sim --detector scripted
+python -m pip install -e '.[teleop]'
+python scripts/download_hand_landmarker.py
+python examples/hand_landmarks.py
+python examples/hand_target.py
 ```
 
 ## Limitations of simulating cheap open-loop hobby servos
@@ -461,3 +499,6 @@ real dynamic behavior.
    (detection, 3-DOF visual servo, webcam/sim sources) with a `FaceFollower`
    attention layer that hands off to the full-range idle scan; tuning and a
    real-hardware follow path remain.
+8. ~~Add hand teleoperation Stage 0/1~~ — asynchronous two-hand MediaPipe
+   landmarks plus pinch-clutched, filtered virtual `[x,y,z,pitch]` output;
+   IK, simulation motion, networking, and real-arm control remain out of scope.

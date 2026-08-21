@@ -71,6 +71,9 @@ class WebcamSource(ImageSource):
     wrist-local -X), so a caller feeding frames to an upright-face detector
     must pass ``CameraConfig.rotate_clockwise_deg`` here — otherwise the
     detector sees sideways faces and the image axes do not match the sim's.
+
+    ``width``, ``height``, and ``fps`` are best-effort capture requests;
+    OpenCV backends may choose the nearest supported stream mode.
     """
 
     def __init__(
@@ -78,6 +81,7 @@ class WebcamSource(ImageSource):
         camera_index: int = 0,
         width: int | None = None,
         height: int | None = None,
+        fps: int | None = None,
         rotate_clockwise_deg: int = 0,
     ) -> None:
         if isinstance(rotate_clockwise_deg, bool) or not isinstance(
@@ -100,6 +104,8 @@ class WebcamSource(ImageSource):
             capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         if height is not None:
             capture.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        if fps is not None:
+            capture.set(cv2.CAP_PROP_FPS, fps)
         # Keep the driver queue shallow: a control loop needs the newest frame,
         # not a backlog. Ignored by backends that do not support the property.
         capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
