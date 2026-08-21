@@ -110,8 +110,16 @@ def main() -> int:
             if args.source == "webcam":
                 from butter_finger.perception.sources import WebcamSource
 
+                # Capture at the camera's NATIVE size, then rotate: the
+                # hardware only offers landscape modes, and rotating is what
+                # makes real frames match the sim's portrait output.
                 try:
-                    source = WebcamSource(args.camera_index, width=frame_w, height=frame_h)
+                    source = WebcamSource(
+                        args.camera_index,
+                        width=arm.camera_config.native_width,
+                        height=arm.camera_config.native_height,
+                        rotate_clockwise_deg=arm.camera_config.rotate_clockwise_deg,
+                    )
                 except RuntimeError as exc:
                     print(f"ERROR: {exc}", file=sys.stderr)
                     return 1
