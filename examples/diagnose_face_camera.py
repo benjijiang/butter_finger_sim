@@ -7,10 +7,11 @@ opens the Hiwonder USB camera and answers three questions:
   1. Orientation. The recorded camera mounting says the top of the NATIVE
      image points along wrist-local -X, which is why PyBulletArm rotates its
      render 90 degrees clockwise (config/camera.yaml `output`). WebcamSource
-     does NOT apply that rotation, so real frames reach the Haar cascade
-     rotated by a quarter turn — and a frontal-face cascade does not detect
-     sideways faces. This runs the detector at all four rotations and reports
-     which one actually finds your face.
+     applies that rotation only when the caller passes rotate_clockwise_deg,
+     which real_face_tracking.py does. This script deliberately opens the
+     camera UNROTATED and runs the detector at all four rotations, so it can
+     report which one actually finds your face — a frontal-face cascade does
+     not detect sideways faces.
 
   2. Apparent size ("focal length"). It reports the detected box width as a
      fraction of image width against tracking.target_face_fraction, so you can
@@ -166,10 +167,18 @@ def main() -> int:
         print("Best rotation is 0: the raw webcam frame is already upright, so")
         print("orientation is NOT the problem. Look at the control loop instead.")
     else:
-        print(f"Best rotation is {best} deg clockwise, matching config/camera.yaml's")
-        print(f"output rotation of {camera_cfg.rotate_clockwise_deg} deg. The real")
-        print("path (WebcamSource) does not apply it, so the detector is being fed")
-        print("sideways faces and the pan/tilt image axes are swapped.")
+        print(f"Best rotation is {best} deg clockwise.")
+        if best == camera_cfg.rotate_clockwise_deg:
+            print(f"That matches config/camera.yaml's output rotation of "
+                  f"{camera_cfg.rotate_clockwise_deg} deg, which "
+                  "real_face_tracking.py")
+            print("already passes to WebcamSource — orientation is configured "
+                  "correctly.")
+        else:
+            print(f"config/camera.yaml says {camera_cfg.rotate_clockwise_deg} "
+                  "deg, so the real path rotates frames the WRONG way: the")
+            print("detector sees sideways faces and the pan/tilt image axes "
+                  "are swapped.")
 
     if args.save is not None:
         try:

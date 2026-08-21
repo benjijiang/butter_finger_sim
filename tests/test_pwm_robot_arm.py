@@ -33,19 +33,19 @@ def arm(board: FakeBoard) -> PWMRobotArm:
 def test_physical_config_loads() -> None:
     config = load_physical_config()
     assert set(config.joint_order) == set(JOINT_NAMES)
-    assert config.pwm_ports == {"base": 1, "shoulder": 3, "elbow": 4, "wrist": 5}
+    assert config.pwm_ports == {"base": 2, "shoulder": 1, "elbow": 5, "wrist": 6}
     for joint in config.joint_order:
         assert config.pulse_limits_us[joint].contains(config.home_pwm_us[joint])
 
 
 def test_move_joint_sends_port_and_pulse(arm: PWMRobotArm, board: FakeBoard) -> None:
     arm.move_joint("base", 1500, duration=1.0)
-    assert board.calls == [(1.0, [[1, 1500]])]
+    assert board.calls == [(1.0, [[2, 1500]])]
 
 
 def test_move_joint_rounds_pulse(arm: PWMRobotArm, board: FakeBoard) -> None:
     arm.move_joint("wrist", 1400.4, duration=1.0)
-    assert board.calls == [(1.0, [[5, 1400]])]
+    assert board.calls == [(1.0, [[6, 1400]])]
 
 
 def test_move_joint_rejects_out_of_range(arm: PWMRobotArm, board: FakeBoard) -> None:
@@ -68,7 +68,7 @@ def test_move_joint_rejects_nonpositive_duration(arm: PWMRobotArm, board: FakeBo
 
 def test_move_joints_sends_one_command(arm: PWMRobotArm, board: FakeBoard) -> None:
     arm.move_joints({"base": 1500, "elbow": 2490}, duration=2.0)
-    assert board.calls == [(2.0, [[1, 1500], [4, 2490]])]
+    assert board.calls == [(2.0, [[2, 1500], [5, 2490]])]
 
 
 def test_move_joints_validates_all_before_sending(arm: PWMRobotArm, board: FakeBoard) -> None:

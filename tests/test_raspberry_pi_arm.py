@@ -78,7 +78,7 @@ def test_timed_move_sends_one_atomic_command_and_waits(
 
     arm.move_joints({"base": 0.0, "shoulder": -0.765}, duration_s=0.5)
 
-    assert board.calls == [(0.5, [[1, 1500], [3, 1700]])]
+    assert board.calls == [(0.5, [[2, 1500], [1, 1700]])]
     assert waits == [0.5]
 
 
@@ -89,7 +89,7 @@ def test_untimed_move_uses_pwm_default_without_waiting(
 
     arm.move_joint("wrist", -1.4124)
 
-    assert board.calls == [(1.0, [[5, 1500]])]
+    assert board.calls == [(1.0, [[6, 1500]])]
     assert waits == []
 
 
@@ -103,13 +103,13 @@ def test_untimed_move_uses_stream_duration_when_configured() -> None:
 
     arm.move_joint("wrist", -1.4124)
 
-    assert board.calls == [(0.04, [[5, 1500]])]
+    assert board.calls == [(0.04, [[6, 1500]])]
     assert waits == []
 
     # An explicit duration still wins, and still blocks until it completes.
     arm.move_joint("wrist", -1.4124, duration_s=0.5)
 
-    assert board.calls[-1] == (0.5, [[5, 1500]])
+    assert board.calls[-1] == (0.5, [[6, 1500]])
     assert waits == [0.5]
 
 
@@ -198,10 +198,10 @@ def test_home_uses_exact_physical_pwm_waits_and_establishes_state(
     duration, positions = board.calls[0]
     assert duration == 3.0
     assert {port: pulse for port, pulse in positions} == {
-        1: 1500,
-        3: 2200,
-        4: 2490,
-        5: 1400,
+        2: 1500,
+        1: 2200,
+        5: 2490,
+        6: 1400,
     }
     assert waits == [3.0]
     state = arm.get_joint_positions()
