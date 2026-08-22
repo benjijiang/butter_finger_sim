@@ -138,6 +138,38 @@ python examples/hand_teleoperation.py --dry-run
 - There is also `python examples/go_home.py`, which moves the arm to the
   simulated reference pose.
 
+### Stage 3: Mac camera and IK, Raspberry Pi hardware host
+
+Stage 3 is not a PyBullet workflow. The Mac continues to run the webcam,
+MediaPipe weights, retargeting, and IK; the Pi needs only the core package,
+Hiwonder SDK, and its existing UART access. Stop every other arm-owning
+process, then run:
+
+```bash
+# Pi terminal
+cd ~/board_demo/butter_finger_sim
+source .venv/bin/activate
+python examples/pi_teleop_receiver.py --confirm-hardware
+
+# Mac tunnel terminal
+ssh -N -T -o ExitOnForwardFailure=yes \
+  -L 8765:127.0.0.1:8765 <user>@<pi-address>
+
+# Mac camera/UI terminal
+source .venv/bin/activate
+python examples/hand_teleoperation_stage3.py --confirm-remote-hardware
+```
+
+Use `--dry-run` instead of `--confirm-hardware` on the Pi to validate the
+network without opening UART. The Pi binds only `127.0.0.1:8765`; SSH provides
+authentication and encryption. Open the controlling hand for three fresh
+frames, then pinch. Release or any link/tracking fault holds the last target
+and disarms. A new network session requires restarting the receiver; neither
+side automatically reconnects or returns home on failure.
+
+The Mac sender independently converts a stalled camera/UI loop into HOLD after
+150 ms, before the Pi's 250 ms network watchdog is needed.
+
 Named actions use the shared calibrated radian domain. Emotional `duration_s`
 values are intentional: short steps communicate surprise, fear, excitement,
 or force, while long steps communicate affection, thought, sadness, or

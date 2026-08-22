@@ -153,6 +153,46 @@ def draw_dry_run_status(cv2, display, step: DryRunStep) -> None:
     _draw_lines(cv2, display, lines, start_y, (60, 220, 255))
 
 
+def draw_remote_status(cv2, display, step: DryRunStep, control_status) -> None:
+    """Overlay Stage 3 live-link state without implying joint feedback."""
+    link = control_status.link
+    banner_color = (40, 40, 255) if link.server_state != "ARMED" else (40, 200, 255)
+    cv2.putText(
+        display,
+        "*** LIVE REMOTE HARDWARE - FULL CALIBRATED ENVELOPE ***",
+        (10, 76),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.62,
+        banner_color,
+        2,
+        cv2.LINE_AA,
+    )
+    sent = "--" if link.last_sent_seq is None else str(link.last_sent_seq)
+    applied = "--" if link.last_applied_seq is None else str(link.last_applied_seq)
+    release = (
+        f"OPEN HAND REQUIRED ({control_status.release_frames} frames)"
+        if control_status.release_required
+        else "release latch ready"
+    )
+    ik_status = step.ik_result.status.value if step.ik_result is not None else "NOT RUN"
+    lines = [
+        (
+            f"link={'CONNECTED' if link.connected else 'DOWN'} "
+            f"mode={link.mode or '--'} Pi={link.server_state} "
+            f"sent={sent} applied={applied}"
+        ),
+        f"arming: {release}  requested={control_status.arm_requested}",
+        f"local: {control_status.local_reason or 'commanding'}",
+        f"Pi: {link.reason or 'none'}  failure: {link.failure or 'none'}",
+        f"IK={ik_status} candidate: {_format_joints(step.output_joints_rad)}",
+        f"Pi applied estimate: {_format_joints(link.applied_joints_rad)}",
+        "PINCH moves only after open-hand release latch; RELEASE/HOLD disarms.",
+        "No joint feedback or collision detection. q/Esc holds and disconnects.",
+    ]
+    start_y = max(100, display.shape[0] - (len(lines) * 18 + 8))
+    _draw_lines(cv2, display, lines, start_y, (60, 220, 255))
+
+
 def _format_joints(joints: dict[str, float] | None) -> str:
     if joints is None:
         return "--"

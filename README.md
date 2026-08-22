@@ -59,6 +59,7 @@ butter-finger-sim/
 │   ├── camera.yaml          # camera stream metadata and simulation projection
 │   ├── tracking.yaml        # simulation-only face-tracking control knobs
 │   ├── teleoperation.yaml   # Stage 0/1 hand target + Stage 2 IK dry-run settings
+│   ├── remote_teleoperation.yaml # Stage 3 TCP/watchdog/two-layer slew settings
 │   └── voice.yaml           # Pi voice, wake, audio, and Realtime settings
 ├── models/
 │   ├── meshes/                      # SolidWorks-exported link meshes
@@ -79,6 +80,7 @@ butter-finger-sim/
 │   │   ├── attention.py         # FaceFollower: track <-> idle-scan hand-off
 │   │   └── config.py            # tracking.yaml loader
 │   ├── teleoperation/       # hand target + pure-math IK dry run; no arm access
+│   ├── remote_control/      # Stage 3 strict protocol, Mac client, Pi receiver
 │   └── backends/
 │       ├── pybullet_arm.py      # simulation backend (runs on the sim machine)
 │       ├── pwm_robot_arm.py     # REAL hardware, PWM microseconds (Raspberry Pi)
@@ -97,6 +99,8 @@ butter-finger-sim/
 │   ├── hand_landmarks.py    # Stage 0: webcam 21-landmark viewer; no arm
 │   ├── hand_target.py       # Stage 1: filtered virtual EE target; no arm
 │   ├── hand_teleoperation.py # Stage 2: FK/IK + joint dry run; no arm
+│   ├── hand_teleoperation_stage3.py # MAC: camera/IK + remote radians client
+│   ├── pi_teleop_receiver.py # PI: safety governor + RaspberryPiArm server
 │   ├── pi_test_pose.py      # REAL HARDWARE: joint-by-joint home-pose test
 │   └── pi_sweep_base.py     # REAL HARDWARE: base sweep around home
 ├── tests/                   # dependency-light; none require PyBullet or hardware
@@ -396,6 +400,49 @@ radian limits. `SOLVED` means only that the mathematical target converged
 inside that configuration domain. There is no collision checking, hardware
 margin, physical validation, networking, PWM, or robot command path.
 
+## Hand teleoperation Stage 3 (Mac camera → Pi hardware)
+
+Stage 3 keeps the webcam, MediaPipe model, retargeting, and IK on the Mac. A
+persistent TCP/NDJSON connection through a manually opened SSH tunnel sends
+only four named radian targets to the Pi. The Pi independently validates the
+protocol, session, sequence, complete joint set, calibrated range, watchdog,
+and final slew rate before `RaspberryPiArm` converts radians to PWM.
+
+Stop voice chat, face tracking, idle scanning, and every other arm owner first.
+Then use three terminals:
+
+```bash
+# Terminal 1 — Raspberry Pi
+cd ~/board_demo/butter_finger_sim
+source .venv/bin/activate
+python examples/pi_teleop_receiver.py --confirm-hardware
+
+# Terminal 2 — Mac: encrypted local port forwarding only
+ssh -N -T -o ExitOnForwardFailure=yes \
+  -L 8765:127.0.0.1:8765 <user>@<pi-address>
+
+# Terminal 3 — Mac: camera, MediaPipe, IK, and remote command publisher
+source .venv/bin/activate
+python examples/hand_teleoperation_stage3.py --confirm-remote-hardware
+```
+
+For network commissioning without UART/PWM, replace the Pi command with
+`python examples/pi_teleop_receiver.py --dry-run`. The Pi always homes and
+moves to `idle_ready` before listening in hardware mode. Stage 3 then requires
+three fresh explicitly open-hand frames before the next pinch can ARM it.
+Release, stale tracking, IK failure, a 250 ms watchdog, invalid protocol, or
+disconnect stops new commands and leaves the last target in place; it never
+automatically homes and never automatically reconnects.
+
+The Mac sender also has an independent 150 ms control-loop watchdog: if camera
+or UI processing blocks, its network thread replaces the old TARGET heartbeat
+with HOLD even though the TCP connection itself is still healthy.
+
+The Mac shapes commands at 0.25 rad/s; the Pi enforces an authoritative
+0.275 rad/s maximum at 20 Hz with a 75 ms board interpolation window. The
+selected command envelope is the full calibrated range. That range is not a
+collision guarantee, and the real arm still has no shaft-angle feedback.
+
 ## Real hardware (Raspberry Pi only)
 
 Use `RaspberryPiArm` for normal application code in radians. It wraps
@@ -461,6 +508,8 @@ python scripts/download_hand_landmarker.py
 python examples/hand_landmarks.py
 python examples/hand_target.py
 python examples/hand_teleoperation.py --dry-run
+# Stage 3 requires the separately confirmed Pi receiver and SSH tunnel:
+python examples/hand_teleoperation_stage3.py --confirm-remote-hardware
 ```
 
 ## Limitations of simulating cheap open-loop hobby servos
@@ -510,5 +559,8 @@ real dynamic behavior.
    landmarks plus pinch-clutched, filtered virtual `[x,y,z,pitch]` output.
 9. ~~Add hand teleoperation Stage 2 dry run~~ — fixed idle-camera task frame,
    pure NumPy CAD FK/IK, deterministic reachability diagnostics, and
-   rate-limited joint candidates; collision checking, networking, and real-arm
-   control remain out of scope.
+   rate-limited joint candidates; Stage 2 itself remains offline and cannot
+   move an arm.
+10. ~~Add hand teleoperation Stage 3~~ — Mac camera/MediaPipe/IK client plus a
+    strict, watchdog-protected Pi radians receiver over TCP through a manual
+    SSH tunnel. Collision checking and real joint feedback remain outstanding.

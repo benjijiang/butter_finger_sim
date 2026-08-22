@@ -1,4 +1,4 @@
-"""Shared webcam application loop for the Stage 0/1/2 CLIs."""
+"""Shared webcam application loop for the Stage 0/1/2/3 CLIs."""
 from __future__ import annotations
 
 import argparse
@@ -32,6 +32,7 @@ from butter_finger.teleoperation.types import (
 from butter_finger.teleoperation.visualization import (
     draw_dry_run_status,
     draw_hands,
+    draw_remote_status,
     draw_runtime_status,
     draw_target_status,
 )
@@ -52,17 +53,24 @@ class _RateMeter:
 
 
 def build_parser(stage: int) -> argparse.ArgumentParser:
-    if stage not in (0, 1, 2):
-        raise ValueError("stage must be 0, 1, or 2")
+    if stage not in (0, 1, 2, 3):
+        raise ValueError("stage must be 0, 1, 2, or 3")
     titles = {
         0: "21-landmark viewer",
         1: "virtual EE target viewer",
         2: "IK dry-run viewer",
+        3: "remote hardware teleoperation",
     }
+    safety_description = (
+        "Camera-only: this program does not construct an arm backend and "
+        "cannot move the robot."
+        if stage < 3
+        else "Mac-side camera/IK client; commands are sent in radians to the "
+        "separately confirmed Raspberry Pi receiver."
+    )
     parser = argparse.ArgumentParser(
         description=(
-            f"Butter Finger Stage {stage} {titles[stage]}. Camera-only: this "
-            "program does not construct an arm backend and cannot move the robot."
+            f"Butter Finger Stage {stage} {titles[stage]}. {safety_description}"
         )
     )
     parser.add_argument("--camera-index", type=int, default=0)
@@ -77,7 +85,24 @@ def build_parser(stage: int) -> argparse.ArgumentParser:
             action="store_true",
             help="required acknowledgement that no robot commands will be sent",
         )
-    if stage in (1, 2):
+    if stage == 3:
+        from butter_finger.remote_control.config import (
+            REMOTE_TELEOPERATION_CONFIG_PATH,
+        )
+
+        parser.add_argument(
+            "--confirm-remote-hardware",
+            action="store_true",
+            help="required acknowledgement before connecting to the Pi receiver",
+        )
+        parser.add_argument("--host", default="127.0.0.1")
+        parser.add_argument("--port", type=int, default=None)
+        parser.add_argument(
+            "--remote-config",
+            type=Path,
+            default=REMOTE_TELEOPERATION_CONFIG_PATH,
+        )
+    if stage in (1, 2, 3):
         parser.add_argument(
             "--log-jsonl",
             type=Path,
@@ -97,12 +122,13 @@ def run_viewer(
     source_factory: Callable[..., Any] | None = None,
     tracker_factory: Callable[..., Any] | None = None,
     controller_factory: Callable[[TeleoperationConfig], Any] | None = None,
+    remote_client_factory: Callable[..., Any] | None = None,
     cv2_module: Any | None = None,
     clock: Callable[[], float] = time.monotonic,
 ) -> int:
     """Run a hand-teleoperation stage with injectable runtime boundaries."""
-    if stage not in (0, 1, 2):
-        raise ValueError("stage must be 0, 1, or 2")
+    if stage not in (0, 1, 2, 3):
+        raise ValueError("stage must be 0, 1, 2, or 3")
     args = build_parser(stage).parse_args(argv)
     if stage == 2 and not args.dry_run:
         print(
@@ -111,15 +137,22 @@ def run_viewer(
             file=sys.stderr,
         )
         return 2
+    if stage == 3 and not args.confirm_remote_hardware:
+        print(
+            "ERROR: Stage 3 controls remote hardware; pass "
+            "--confirm-remote-hardware after starting the confirmed Pi receiver.",
+            file=sys.stderr,
+        )
+        return 2
 
     try:
-        config = load_teleoperation_config(args.config, include_ik=stage == 2)
+        config = load_teleoperation_config(args.config, include_ik=stage in (2, 3))
     except (OSError, ValueError) as exc:
         print(f"ERROR: could not load teleoperation config: {exc}", file=sys.stderr)
         return 1
 
     dry_run_controller = None
-    if stage == 2:
+    if stage in (2, 3):
         if controller_factory is None:
             # Keep Stage 0/1 imports and their proven runtime path independent
             # of the Stage 2 kinematics implementation.
@@ -136,6 +169,43 @@ def run_viewer(
             print(f"ERROR: could not initialize IK dry-run: {exc}", file=sys.stderr)
             return 1
 
+    remote_client = None
+    remote_coordinator = None
+    if stage == 3:
+        try:
+            from butter_finger.config import load_arm_config
+            from butter_finger.remote_control.client import (
+                RemoteControlClient,
+                Stage3Coordinator,
+            )
+            from butter_finger.remote_control.config import (
+                compute_profile_sha256,
+                load_remote_teleoperation_config,
+            )
+
+            remote_config = load_remote_teleoperation_config(args.remote_config)
+            arm_config = load_arm_config()
+            startup_joints = dict(arm_config.poses[remote_config.startup_pose])
+            profile_sha256 = compute_profile_sha256(remote_config, arm_config)
+            factory = (
+                RemoteControlClient
+                if remote_client_factory is None
+                else remote_client_factory
+            )
+            remote_client = factory(
+                remote_config,
+                profile_sha256,
+                startup_joints,
+                host=args.host,
+                port=args.port,
+            )
+            remote_client.connect()
+            remote_coordinator = Stage3Coordinator(remote_client, config.clutch)
+        except (OSError, RuntimeError, ValueError) as exc:
+            _close_runtime_resources(remote_client=remote_client)
+            print(f"ERROR: could not initialize Stage 3 link: {exc}", file=sys.stderr)
+            return 1
+
     if cv2_module is None:
         try:
             import cv2 as cv2_module
@@ -145,6 +215,7 @@ def run_viewer(
                 "python -m pip install -e '.[teleop]'",
                 file=sys.stderr,
             )
+            _close_runtime_resources(remote_client=remote_client)
             return 1
     if tracker_factory is None and not args.model_path.is_file():
         print(
@@ -153,6 +224,7 @@ def run_viewer(
             "or pass --model-path /path/to/hand_landmarker.task.",
             file=sys.stderr,
         )
+        _close_runtime_resources(remote_client=remote_client)
         return 1
     if source_factory is None:
         from butter_finger.perception.sources import WebcamSource
@@ -173,28 +245,46 @@ def run_viewer(
         )
         tracker = tracker_factory(args.model_path, config.hand_tracking)
     except (OSError, RuntimeError, ValueError) as exc:
-        _close_runtime_resources(source=source)
+        _close_runtime_resources(source=source, remote_client=remote_client)
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    target_controller = VirtualTargetController(config) if stage in (1, 2) else None
+    target_controller = (
+        VirtualTargetController(config) if stage in (1, 2, 3) else None
+    )
     log_handle = None
-    if stage in (1, 2) and args.log_jsonl is not None:
+    if stage in (1, 2, 3) and args.log_jsonl is not None:
         try:
             log_handle = args.log_jsonl.open("a", encoding="utf-8")
         except OSError as exc:
             print(f"ERROR: could not open JSONL log: {exc}", file=sys.stderr)
-            _close_runtime_resources(source=source, tracker=tracker)
+            _close_runtime_resources(
+                source=source,
+                tracker=tracker,
+                remote_client=remote_client,
+            )
             return 1
 
     titles = {
         0: "Butter Finger Stage 0 - hand landmarks (q/Esc to quit)",
         1: "Butter Finger Stage 1 - virtual target ONLY (q/Esc to quit)",
         2: "Butter Finger Stage 2 - IK DRY RUN ONLY (q/Esc to quit)",
+        3: "Butter Finger Stage 3 - LIVE REMOTE HARDWARE (q/Esc to quit)",
     }
     title = titles[stage]
-    mode = "CAMERA ONLY" if stage < 2 else "DRY RUN ONLY"
-    print(f"Butter Finger Stage {stage}: {mode}; robot motion is disabled.")
+    modes = {
+        0: "CAMERA ONLY",
+        1: "CAMERA ONLY",
+        2: "DRY RUN ONLY",
+        3: "LIVE REMOTE HARDWARE",
+    }
+    mode = modes[stage]
+    suffix = (
+        "robot motion is disabled."
+        if stage < 3
+        else "Pi hardware control is enabled."
+    )
+    print(f"Butter Finger Stage {stage}: {mode}; {suffix}")
     print(
         f"  camera={args.camera_index} {webcam.width}x{webcam.height}@{webcam.fps} "
         f"mirror={webcam.mirror and not args.no_mirror}"
@@ -214,6 +304,10 @@ def run_viewer(
             now_ms = int(now_s * 1000)
             if frame is None:
                 consecutive_read_failures += 1
+                if stage == 3 and remote_coordinator is not None:
+                    # Do not let the network heartbeat keep moving toward an
+                    # old target while the camera source itself has failed.
+                    remote_coordinator.force_hold("camera_frame_missing")
                 if consecutive_read_failures >= 30:
                     print("ERROR: webcam returned no frames.", file=sys.stderr)
                     return 1
@@ -231,7 +325,7 @@ def run_viewer(
 
             if target_controller is not None:
                 last_update = target_controller.update(observations, now_s)
-                if stage == 2:
+                if stage in (2, 3):
                     assert dry_run_controller is not None
                     last_dry_run_step = dry_run_controller.step(
                         last_update,
@@ -256,6 +350,13 @@ def run_viewer(
                             processed_timestamp_ms=now_ms,
                         )
                         last_logged_hold_reason = last_dry_run_step.hold_reason
+                    if stage == 3:
+                        assert remote_coordinator is not None
+                        remote_coordinator.process_step(
+                            last_dry_run_step,
+                            fresh_result=fresh is not None,
+                            now_s=now_s,
+                        )
                 elif fresh is not None and log_handle is not None:
                     _write_log(log_handle, fresh, last_update)
 
@@ -291,18 +392,30 @@ def run_viewer(
                 draw_target_status(cv2_module, display, last_update)
             elif stage == 2 and last_dry_run_step is not None:
                 draw_dry_run_status(cv2_module, display, last_dry_run_step)
+            elif stage == 3 and last_dry_run_step is not None:
+                assert remote_coordinator is not None
+                draw_remote_status(
+                    cv2_module,
+                    display,
+                    last_dry_run_step,
+                    remote_coordinator.status,
+                )
             cv2_module.imshow(title, display)
             key = cv2_module.waitKey(1) & 0xFF
             if key in (27, ord("q")):
                 break
     except KeyboardInterrupt:
         pass
+    except RuntimeError as exc:
+        print(f"ERROR: Stage 3 runtime stopped: {exc}", file=sys.stderr)
+        return 1
     finally:
         _close_runtime_resources(
             log_handle=log_handle,
             source=source,
             tracker=tracker,
             cv2_module=cv2_module,
+            remote_client=remote_client,
         )
     return 0
 
@@ -313,9 +426,11 @@ def _close_runtime_resources(
     source: Any | None = None,
     tracker: Any | None = None,
     cv2_module: Any | None = None,
+    remote_client: Any | None = None,
 ) -> None:
     """Best-effort cleanup that never skips a later independent resource."""
     callbacks = (
+        ("remote client", getattr(remote_client, "close", None)),
         ("JSONL log", getattr(log_handle, "close", None)),
         ("tracker", getattr(tracker, "close", None)),
         ("camera", getattr(source, "close", None)),

@@ -1,0 +1,45 @@
+# Butter Finger Stage 3 — Mac to Raspberry Pi remote teleoperation.
+#
+# The Mac owns the camera, MediaPipe, hand retargeting, and IK. The Pi owns
+# hardware validation, radians-to-PWM calibration, UART, and the final slew
+# limit. SSH host names and credentials deliberately do not live here.
+
+remote_teleoperation:
+  protocol_version: 1
+
+  endpoint:
+    bind_host: "127.0.0.1"
+    port: 8765
+
+  link:
+    publish_rate_hz: 20.0
+    mac_control_timeout_s: 0.15
+    watchdog_timeout_s: 0.25
+    connect_timeout_s: 3.0
+    socket_timeout_s: 0.10
+    status_timeout_s: 0.50
+    max_frame_bytes: 4096
+
+  control:
+    startup_pose: idle_ready
+    startup_duration_s: 2.0
+    stream_duration_s: 0.075
+    max_slew_dt_s: 0.10
+    command_epsilon_rad: 0.000001
+    command_envelope: calibrated
+
+    # Normal Mac-side command shaping. The Pi limit below remains
+    # authoritative and has ten percent headroom over this value.
+    mac_joint_rate_limits_rad_s:
+      base: 0.25
+      shoulder: 0.25
+      elbow: 0.25
+      wrist: 0.25
+
+    # Final Pi-side safety governor. These are commissioning values, not
+    # measured servo specifications or collision guarantees.
+    pi_joint_rate_limits_rad_s:
+      base: 0.275
+      shoulder: 0.275
+      elbow: 0.275
+      wrist: 0.275
