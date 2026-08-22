@@ -131,3 +131,12 @@ camera_mount:
   child: "camera_link"
   origin_xyz: [0.011, 0.044, 0.013]
   origin_rpy: [0.0, 0.0, 0.0]
+
+# Hand-teleoperation controls the mechanical wrist endpoint rather than the
+# camera optical center. The CAD export has no separate distal wrist frame, so
+# this fixed centerline point uses the recorded 49 mm wrist length above.
+teleoperation_endpoint:
+  parent: "wrist_link"
+  child: "wrist_tip"
+  origin_xyz: [0.0, 0.049, 0.0]
+  origin_rpy: [0.0, 0.0, 0.0]

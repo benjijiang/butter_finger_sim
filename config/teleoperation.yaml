@@ -20,12 +20,16 @@ teleoperation:
     owner_match_distance: 0.25
 
   clutch:
-    engage_ratio: 0.35
-    release_ratio: 0.45
+    # Thumb-tip/index-tip separation divided by palm width. Slightly relaxed
+    # so the clutch engages without requiring the fingertips to touch tightly.
+    engage_ratio: 0.40
+    release_ratio: 0.50
     debounce_frames: 3
     lost_timeout_s: 0.15
 
   mapping:
+    # Screen-plane motion follows the midpoint between thumb tip and index tip.
+    # Depth remains a relative palm-width estimate; pitch uses the palm plane.
     gain_x_m: 0.12
     gain_y_m: 0.24
     gain_z_m: 0.20
@@ -39,7 +43,7 @@ teleoperation:
   # safety limits and must not be forwarded to RaspberryPiArm.
   ik:
     anchor_pose: idle_ready
-    end_effector: camera_link
+    end_effector: wrist_tip
     position_tolerance_m: 0.002
     pitch_tolerance_rad: 0.035
     orientation_weight_m_per_rad: 0.08

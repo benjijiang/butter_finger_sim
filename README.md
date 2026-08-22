@@ -370,8 +370,10 @@ On Linux the webcam uses V4L2 (`/dev/video0`); ensure your user is in the
 The hand-teleoperation tools never construct `PyBulletArm`, `RaspberryPiArm`,
 or the PWM driver. Stage 0 displays MediaPipe's 21 landmarks; Stage 1 converts
 a pinch-clutched relative hand motion into a provisional `[x,y,z,pitch]`
-target; Stage 2 anchors that relative motion at the `idle_ready` camera pose,
-solves the CAD kinematics, and displays rate-limited joint-angle candidates.
+target; screen-plane motion follows the midpoint between the thumb tip and
+index tip. Stage 2 anchors that relative motion at the `idle_ready` mechanical
+`wrist_tip`, solves the CAD kinematics, and displays rate-limited joint-angle
+candidates.
 
 Install the optional host dependencies and verified model asset:
 
@@ -390,14 +392,19 @@ python examples/hand_teleoperation.py --dry-run
 python examples/hand_teleoperation.py --dry-run --log-jsonl /tmp/hand-ik.jsonl
 ```
 
-All webcam previews are mirrored by default. In Stage 1, pinch for three frames
-to take control, move the virtual target, and release for three frames to hold.
-If the controlling hand is lost, show an open hand before pinching again.
+All webcam previews are mirrored by default. The magenta circle marks the
+pinch midpoint used for horizontal and vertical motion. In Stage 1, pinch for
+three frames to take control, move the virtual target, and release for three
+frames to hold. If the controlling hand is lost, show an open hand before
+pinching again.
 `config/teleoperation.yaml` contains the gains, 3 Hz low-pass, clutch
 thresholds, provisional workspace, IK tolerances, and dry-run slew rates.
 Stage 2 uses pure NumPy FK/IK from the recorded CAD transforms and calibrated
-radian limits. `SOLVED` means only that the mathematical target converged
-inside that configuration domain. There is no collision checking, hardware
+radian limits. The configured workspace is a rectangular clamp in the fixed
+`idle_ready` task frame, expressed as relative offsets from the initial target;
+it is not a measured or guaranteed reachable Cartesian workspace. `SOLVED`
+means only that the mathematical target converged inside that configuration
+domain. There is no collision checking, hardware
 margin, physical validation, networking, PWM, or robot command path.
 
 ## Hand teleoperation Stage 3 (Mac camera → Pi hardware)

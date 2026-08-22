@@ -58,6 +58,8 @@ def extract_hand_features(observation: HandObservation) -> HandFeatures:
 
     palm_u = sum(image[index][0] for index in PALM_INDICES) / len(PALM_INDICES)
     palm_v = sum(image[index][1] for index in PALM_INDICES) / len(PALM_INDICES)
+    pinch_u = (image[THUMB_TIP][0] + image[INDEX_TIP][0]) / 2.0
+    pinch_v = (image[THUMB_TIP][1] + image[INDEX_TIP][1]) / 2.0
 
     index_axis = _subtract(world[INDEX_MCP], world[WRIST])
     pinky_axis = _subtract(world[PINKY_MCP], world[WRIST])
@@ -77,6 +79,8 @@ def extract_hand_features(observation: HandObservation) -> HandFeatures:
         confidence=observation.confidence,
         palm_u=palm_u,
         palm_v=palm_v,
+        pinch_u=pinch_u,
+        pinch_v=pinch_v,
         palm_scale=palm_scale,
         palm_pitch_rad=palm_pitch,
         pinch_ratio=pinch_ratio,

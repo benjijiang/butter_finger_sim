@@ -1,4 +1,4 @@
-"""Pure-NumPy camera-link forward and inverse kinematics for dry-run teleop.
+"""Pure-NumPy wrist/end-effector forward and inverse kinematics for teleop.
 
 The CAD transforms loaded here have not been independently validated against
 the physical arm.  Results from this module are configuration-domain
@@ -24,7 +24,7 @@ from butter_finger.teleoperation.types import (
 )
 
 
-_CAMERA_FORWARD = np.array((0.0, 1.0, 0.0), dtype=float)
+_END_EFFECTOR_FORWARD = np.array((0.0, 1.0, 0.0), dtype=float)
 _BASE_UP = np.array((0.0, 0.0, 1.0), dtype=float)
 _LIMIT_EPSILON_RAD = 1e-10
 
@@ -104,7 +104,7 @@ class _Attempt:
 
 
 class KinematicModel:
-    """Serial four-joint model ending at the camera optical center."""
+    """Serial four-joint model ending at the configured wrist/tool frame."""
 
     def __init__(
         self,
@@ -114,7 +114,7 @@ class KinematicModel:
         limits: Mapping[str, JointLimits],
         anchor_joints: Mapping[str, float],
         joint_transforms: Sequence[_JointTransform],
-        camera_transform: np.ndarray,
+        end_effector_transform: np.ndarray,
     ) -> None:
         self.ik_config = ik_config
         self.joint_order = tuple(joint_order)
@@ -123,7 +123,9 @@ class KinematicModel:
             name: float(anchor_joints[name]) for name in self.joint_order
         }
         self._joint_transforms = tuple(joint_transforms)
-        self._camera_transform = np.array(camera_transform, dtype=float, copy=True)
+        self._end_effector_transform = np.array(
+            end_effector_transform, dtype=float, copy=True
+        )
         # Triangle inequality over every fixed translation gives a conservative
         # position-radius bound, independent of joint angles and limits.
         self.max_position_radius_m = float(
@@ -131,16 +133,16 @@ class KinematicModel:
                 np.linalg.norm(joint.origin[:3, 3])
                 for joint in self._joint_transforms
             )
-            + np.linalg.norm(self._camera_transform[:3, 3])
+            + np.linalg.norm(self._end_effector_transform[:3, 3])
         )
 
         anchor_transform = self._transform(self._joint_vector(self.anchor_joints))
-        anchor_forward = anchor_transform[:3, :3] @ _CAMERA_FORWARD
+        anchor_forward = anchor_transform[:3, :3] @ _END_EFFECTOR_FORWARD
         horizontal = anchor_forward - float(anchor_forward @ _BASE_UP) * _BASE_UP
         horizontal_norm = float(np.linalg.norm(horizontal))
         if horizontal_norm <= 1e-9:
             raise ValueError(
-                f"anchor pose {ik_config.anchor_pose!r} has a vertical camera axis"
+                f"anchor pose {ik_config.anchor_pose!r} has a vertical end-effector axis"
             )
         self._task_x = horizontal / horizontal_norm
         self._task_z = _BASE_UP.copy()
@@ -217,19 +219,44 @@ class KinematicModel:
                 f"camera_mount.parent must be {expected_parent!r}, got "
                 f"{camera.get('parent')!r}"
             )
-        if camera.get("child") != ik_config.end_effector:
+        endpoint = raw.get("teleoperation_endpoint")
+        if not isinstance(endpoint, dict):
+            raise ValueError("geometry.teleoperation_endpoint must be a mapping")
+        if endpoint.get("parent") != expected_parent:
             raise ValueError(
-                "configured IK end_effector must match geometry.camera_mount.child"
+                f"teleoperation_endpoint.parent must be {expected_parent!r}, got "
+                f"{endpoint.get('parent')!r}"
             )
-        camera_xyz = _vector3(
-            camera.get("origin_xyz"), "camera_mount.origin_xyz"
-        )
-        camera_rpy = _vector3(
-            camera.get("origin_rpy"), "camera_mount.origin_rpy"
-        )
-        camera_transform = _translation_rotation(
-            camera_xyz, _rpy_rotation(camera_rpy)
-        )
+
+        if ik_config.end_effector == expected_parent:
+            # The wrist-link origin is the endpoint of the actuated serial
+            # chain, immediately after the wrist joint transform.
+            end_effector_transform = np.eye(4, dtype=float)
+        elif ik_config.end_effector == endpoint.get("child"):
+            endpoint_xyz = _vector3(
+                endpoint.get("origin_xyz"), "teleoperation_endpoint.origin_xyz"
+            )
+            endpoint_rpy = _vector3(
+                endpoint.get("origin_rpy"), "teleoperation_endpoint.origin_rpy"
+            )
+            end_effector_transform = _translation_rotation(
+                endpoint_xyz, _rpy_rotation(endpoint_rpy)
+            )
+        elif ik_config.end_effector == camera.get("child"):
+            camera_xyz = _vector3(
+                camera.get("origin_xyz"), "camera_mount.origin_xyz"
+            )
+            camera_rpy = _vector3(
+                camera.get("origin_rpy"), "camera_mount.origin_rpy"
+            )
+            end_effector_transform = _translation_rotation(
+                camera_xyz, _rpy_rotation(camera_rpy)
+            )
+        else:
+            raise ValueError(
+                "configured IK end_effector must be wrist_link, wrist_tip, "
+                "or camera_link"
+            )
 
         anchor = arm.poses[ik_config.anchor_pose]
         if set(anchor) != set(arm.joint_order):
@@ -249,11 +276,11 @@ class KinematicModel:
             limits=arm.sim_limits,
             anchor_joints=anchor,
             joint_transforms=transforms,
-            camera_transform=camera_transform,
+            end_effector_transform=end_effector_transform,
         )
 
     def forward(self, joints: Mapping[str, float]) -> EndEffectorPose:
-        """Return the camera-center position and signed task-frame pitch."""
+        """Return the configured endpoint position and task-frame pitch."""
         vector = self._joint_vector(joints)
         return self._pose_from_transform(self._transform(vector))
 
@@ -261,7 +288,7 @@ class KinematicModel:
         """Return camera-forward dot task-X; low values are invalid IK branches."""
         vector = self._joint_vector(joints)
         transform = self._transform(vector)
-        forward = transform[:3, :3] @ _CAMERA_FORWARD
+        forward = transform[:3, :3] @ _END_EFFECTOR_FORWARD
         return float(forward @ self._task_x)
 
     def target_from_virtual_delta(
@@ -337,11 +364,11 @@ class KinematicModel:
             )
             # URDF semantics: Trans(xyz) Rz(yaw) Ry(pitch) Rx(roll) Rot(axis,q).
             transform = transform @ joint.origin @ rotation
-        return transform @ self._camera_transform
+        return transform @ self._end_effector_transform
 
     def _pose_from_transform(self, transform: np.ndarray) -> EndEffectorPose:
         position = transform[:3, 3]
-        forward = transform[:3, :3] @ _CAMERA_FORWARD
+        forward = transform[:3, :3] @ _END_EFFECTOR_FORWARD
         pitch = math.atan2(
             float(forward @ self._task_z), float(forward @ self._task_x)
         )
@@ -357,12 +384,12 @@ class KinematicModel:
 
     def _unchecked_forward_component(self, joint_vector: np.ndarray) -> float:
         transform = self._transform(joint_vector)
-        forward = transform[:3, :3] @ _CAMERA_FORWARD
+        forward = transform[:3, :3] @ _END_EFFECTOR_FORWARD
         return float(forward @ self._task_x)
 
 
 class IKSolver:
-    """Deterministic, bounded damped-least-squares IK for camera-link pose."""
+    """Deterministic, bounded damped-least-squares IK for the endpoint pose."""
 
     def __init__(
         self,

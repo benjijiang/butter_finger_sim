@@ -128,13 +128,15 @@ python examples/hand_teleoperation.py --dry-run
 - `hand_landmarks.py` — Stage 0 webcam-only viewer for up to two hands and all
   21 MediaPipe landmarks. It never opens an arm backend.
 - `hand_target.py` — Stage 1 pinch-clutched virtual `[x,y,z,pitch]` display.
-  Its configured workspace is provisional visualization data; no simulated or
-  physical robot moves.
+  Screen-plane motion uses the thumb-tip/index-tip midpoint (shown in magenta).
+  Its configured rectangular workspace is a provisional clamp relative to the
+  initial target, not a measured reachable volume; no simulated or physical
+  robot moves.
 - `hand_teleoperation.py --dry-run` — Stage 2 maps the relative hand target
-  into a fixed `idle_ready` task frame, solves pure-math CAD FK/IK, and shows
-  provisional rate-limited joint candidates. It imports no arm backend and
-  never moves a simulated or physical robot. `SOLVED` is not a hardware safety
-  claim; collision and physical validation remain outstanding.
+  into a fixed `idle_ready` wrist-tip task frame, solves pure-math CAD FK/IK,
+  and shows provisional rate-limited joint candidates. It imports no arm
+  backend and never moves a simulated or physical robot. `SOLVED` is not a
+  hardware safety claim; collision and physical validation remain outstanding.
 - There is also `python examples/go_home.py`, which moves the arm to the
   simulated reference pose.
 

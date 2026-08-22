@@ -209,8 +209,9 @@ on the real arm; verify them with that example's `--dry-run` before moving.
 12. Hand teleoperation lives in `butter_finger.teleoperation` and must not
     directly import or construct `ArmBackend`, PyBullet, RaspberryPiArm, or
     PWM. Stage 0/1 produces a provisional `[x,y,z,pitch]`; Stage 2 anchors its
-    relative delta at the `idle_ready` camera pose and runs pure-NumPy CAD
-    FK/IK plus a diagnostic slew limiter. `SOLVED` means configuration-domain
+    thumb-tip/index-tip midpoint delta at the `idle_ready` mechanical
+    `wrist_tip` pose and runs pure-NumPy CAD FK/IK plus a diagnostic slew
+    limiter. `SOLVED` means configuration-domain
     convergence only, never hardware safety: there is no collision model,
     physical transform validation, networking, or command path. MediaPipe and
     OpenCV remain optional and lazily imported.

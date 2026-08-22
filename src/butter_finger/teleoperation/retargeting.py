@@ -208,9 +208,9 @@ class VirtualTargetController:
             x_m=self._baseline_target.x_m
             + mapping.gain_x_m * math.log(owner.palm_scale / baseline.palm_scale),
             y_m=self._baseline_target.y_m
-            - mapping.gain_y_m * (owner.palm_u - baseline.palm_u),
+            - mapping.gain_y_m * (owner.pinch_u - baseline.pinch_u),
             z_m=self._baseline_target.z_m
-            - mapping.gain_z_m * (owner.palm_v - baseline.palm_v),
+            - mapping.gain_z_m * (owner.pinch_v - baseline.pinch_v),
             pitch_rad=self._baseline_target.pitch_rad
             + mapping.gain_pitch * self._unwrapped_pitch_rad,
             timestamp_s=owner.timestamp_s,

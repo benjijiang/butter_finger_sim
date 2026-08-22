@@ -40,6 +40,8 @@ class HandFeatures:
     confidence: float
     palm_u: float
     palm_v: float
+    pinch_u: float
+    pinch_v: float
     palm_scale: float
     palm_pitch_rad: float
     pinch_ratio: float

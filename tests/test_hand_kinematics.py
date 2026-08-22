@@ -1,4 +1,4 @@
-"""Pure-math tests for Stage 2 camera-link FK and IK."""
+"""Pure-math tests for Stage 2 wrist-tip FK and IK."""
 from __future__ import annotations
 
 import math
@@ -22,14 +22,14 @@ def setup() -> tuple[object, KinematicModel, IKSolver]:
     return config, model, IKSolver(model)
 
 
-def test_idle_ready_golden_camera_pose_and_task_frame(
+def test_idle_ready_golden_wrist_tip_pose_and_task_frame(
     setup: tuple[object, KinematicModel, IKSolver],
 ) -> None:
     _, model, _ = setup
     pose = model.anchor_pose
 
     assert (pose.x_m, pose.y_m, pose.z_m) == pytest.approx(
-        (0.0308969994, 0.0335389978, 0.1934555533), abs=1e-9
+        (0.0421674772, 0.0262428745, 0.1818476718), abs=1e-9
     )
     assert pose.pitch_rad == pytest.approx(0.0606031186, abs=1e-9)
     assert model.forward(model.anchor_joints) == pose

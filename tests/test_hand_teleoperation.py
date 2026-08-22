@@ -33,13 +33,18 @@ def hand(
     v: float = 0.5,
     scale: float = 0.1,
     pinch_ratio: float = 0.6,
+    pinch_u: float | None = None,
+    pinch_v: float | None = None,
     pitch_rad: float = 0.0,
 ) -> HandObservation:
     image = [[u, v, 0.0] for _ in range(21)]
     image[5] = [u - scale / 2.0, v, 0.0]
     image[17] = [u + scale / 2.0, v, 0.0]
-    image[4] = [u, v, 0.0]
-    image[8] = [u + pinch_ratio * scale, v, 0.0]
+    pinch_center_u = u if pinch_u is None else pinch_u
+    pinch_center_v = v if pinch_v is None else pinch_v
+    half_separation = pinch_ratio * scale / 2.0
+    image[4] = [pinch_center_u - half_separation, pinch_center_v, 0.0]
+    image[8] = [pinch_center_u + half_separation, pinch_center_v, 0.0]
 
     world = [[0.0, 0.0, 0.0] for _ in range(21)]
     world[5] = [1.0 if handedness.lower() == "right" else -1.0, 0.0, 0.0]
@@ -81,6 +86,8 @@ def test_extracts_center_scale_pinch_and_pitch_for_both_hands() -> None:
     )
     assert right.palm_u == pytest.approx(0.4)
     assert right.palm_v == pytest.approx(0.6)
+    assert right.pinch_u == pytest.approx(0.4)
+    assert right.pinch_v == pytest.approx(0.6)
     assert right.palm_scale == pytest.approx(0.2)
     assert right.pinch_ratio == pytest.approx(0.25)
     assert right.palm_pitch_rad == pytest.approx(0.3)
@@ -169,6 +176,31 @@ def test_relative_mapping_directions_and_release_hold() -> None:
         assert released.motion_eligible is False
     assert released.state is TrackingState.HOLD
     assert released.target == held_target
+
+
+def test_screen_plane_mapping_uses_pinch_midpoint_not_palm_center() -> None:
+    controller = VirtualTargetController(load_teleoperation_config())
+    engage(controller)
+    initial = controller.target
+
+    moved = controller.update(
+        [
+            hand(
+                0.10,
+                u=0.5,
+                v=0.5,
+                pinch_u=0.6,
+                pinch_v=0.4,
+                scale=0.1,
+                pinch_ratio=0.2,
+            )
+        ],
+        0.10,
+    )
+
+    assert moved.raw_target.x_m == pytest.approx(initial.x_m)
+    assert moved.raw_target.y_m < initial.y_m
+    assert moved.raw_target.z_m > initial.z_m
 
 
 def test_release_debounce_and_brief_owner_gap_freeze_stage2_immediately() -> None:
@@ -309,10 +341,11 @@ def test_default_config_is_camera_only_and_provisional() -> None:
     assert config.webcam.fps == 30
     assert config.webcam.mirror is True
     assert config.hand_tracking.num_hands == 2
-    assert config.clutch.engage_ratio < config.clutch.release_ratio
+    assert config.clutch.engage_ratio == pytest.approx(0.40)
+    assert config.clutch.release_ratio == pytest.approx(0.50)
     assert config.filter_cutoff_hz == pytest.approx(3.0)
     assert config.ik.anchor_pose == "idle_ready"
-    assert config.ik.end_effector == "camera_link"
+    assert config.ik.end_effector == "wrist_tip"
     assert config.ik.position_tolerance_m == pytest.approx(0.002)
     assert config.ik.pitch_tolerance_rad == pytest.approx(0.035)
     assert set(config.ik.joint_rate_limits_rad_s) == {

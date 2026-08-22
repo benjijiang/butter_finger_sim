@@ -33,9 +33,14 @@ def draw_hands(cv2, frame_rgb, observations: tuple[HandObservation, ...]):
         for point in points:
             cv2.circle(display, point, 3, (255, 255, 255), -1, cv2.LINE_AA)
             cv2.circle(display, point, 4, color, 1, cv2.LINE_AA)
+        pinch_center = (
+            (points[4][0] + points[8][0]) // 2,
+            (points[4][1] + points[8][1]) // 2,
+        )
+        cv2.circle(display, pinch_center, 7, (255, 0, 255), 2, cv2.LINE_AA)
         try:
             features = extract_hand_features(observation)
-            pinch = f" pinch={features.pinch_ratio:.2f}"
+            pinch = f" pinch={features.pinch_ratio:.2f} center=magenta"
         except ValueError:
             pinch = " pinch=invalid"
         label = (

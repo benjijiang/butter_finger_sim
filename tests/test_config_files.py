@@ -241,6 +241,10 @@ def test_recorded_camera_mount_and_optical_axes(
     optical = camera_cfg["optical_frame"]
     assert mount["parent"] == "wrist_link"
     assert mount["child"] == "camera_link"
+    endpoint = geometry_cfg["teleoperation_endpoint"]
+    assert endpoint["parent"] == "wrist_link"
+    assert endpoint["child"] == "wrist_tip"
+    assert endpoint["origin_xyz"] == [0.0, 0.049, 0.0]
     assert mount["origin_xyz"] == pytest.approx([0.011, 0.044, 0.013])
     assert mount["origin_rpy"] == pytest.approx([0.0, 0.0, 0.0])
     assert optical["link_name"] == "camera_link"
